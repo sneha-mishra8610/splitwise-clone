@@ -1,7 +1,11 @@
 import './App.css'
 import React, { useEffect, useState } from 'react'
 
+<<<<<<< HEAD
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+=======
+const API_BASE = 'http://localhost:8080/api'
+>>>>>>> 5e91dca (initial commit)
 
 type User = {
   id: string
