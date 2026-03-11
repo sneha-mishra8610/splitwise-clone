@@ -80,6 +80,7 @@
                     <execution>
                         <goals>
                             <goal>repackage</goal>
+                            <goal>run</goal>
                         </goals>
                     </execution>
                 </executions>

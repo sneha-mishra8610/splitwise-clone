@@ -1,3 +1,35 @@
+# Splitwise Frontend
+
+## Production Deployment Instructions
+
+### Environment Variables
+Copy `.env.example` to `.env` and set the values:
+
+- `VITE_API_BASE_URL`: URL of your backend API (e.g., https://your-backend-api-url.com/api)
+
+### Build & Run
+
+1. Install dependencies:
+   ```sh
+   npm install
+   ```
+2. Build:
+   ```sh
+   npm run build
+   ```
+3. Serve (example with Nginx):
+   ```sh
+   # Build Docker image
+   docker build -t splitwise-frontend .
+
+   # Run container
+   docker run -d --env-file .env -p 80:80 splitwise-frontend
+   ```
+
+### Notes
+- Set `VITE_API_BASE_URL` to your backend API endpoint before building.
+- Ensure environment variables are managed securely in production.
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
