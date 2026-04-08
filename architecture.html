@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Splitwise Project Architecture</title>
+  <style>
+    :root {
+      --bg: #f4efe7;
+      --panel: #fffaf2;
+      --panel-strong: #f0e2ce;
+      --ink: #1f2937;
+      --muted: #5f6b7a;
+      --line: #c8b79d;
+      --accent: #0f766e;
+      --accent-soft: #d7f0ea;
+      --backend: #dbeafe;
+      --frontend: #fee2e2;
+      --data: #ede9fe;
+      --service: #dcfce7;
+      --warning: #fff4cc;
+      --shadow: 0 16px 40px rgba(65, 46, 24, 0.12);
+      --radius: 20px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.10), transparent 30%),
+        radial-gradient(circle at top right, rgba(217, 119, 6, 0.10), transparent 25%),
+        var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+    }
+
+    .page {
+      width: min(1280px, calc(100% - 32px));
+      margin: 24px auto 48px;
+    }
+
+    .hero,
+    .section,
+    .legend {
+      background: var(--panel);
+      border: 1px solid rgba(200, 183, 157, 0.7);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 32px;
+      margin-bottom: 24px;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    h1, h2, h3 {
+      margin: 0 0 12px;
+      line-height: 1.15;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      margin-top: 12px;
+    }
+
+    h2 {
+      font-size: 1.6rem;
+      margin-bottom: 16px;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .hero p {
+      max-width: 900px;
+      font-size: 1.02rem;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .stat {
+      padding: 16px;
+      border-radius: 16px;
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 1.5rem;
+      color: var(--ink);
+    }
+
+    .section {
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .diagram {
+      overflow-x: auto;
+      padding-bottom: 8px;
+    }
+
+    .system-flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(180px, 1fr));
+      gap: 22px;
+      align-items: center;
+      min-width: 1060px;
+      margin-top: 18px;
+    }
+
+    .node-col {
+      display: grid;
+      gap: 14px;
+      position: relative;
+    }
+
+    .node {
+      position: relative;
+      padding: 18px 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: white;
+      min-height: 102px;
+    }
+
+    .node:after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -22px;
+      width: 22px;
+      border-top: 2px dashed var(--line);
+      transform: translateY(-50%);
+    }
+
+    .node-col:last-child .node:after {
+      display: none;
+    }
+
+    .frontend { background: var(--frontend); }
+    .backend { background: var(--backend); }
+    .service { background: var(--service); }
+    .data { background: var(--data); }
+    .warning { background: var(--warning); }
+
+    .node h3 {
+      font-size: 1rem;
+      margin-bottom: 8px;
+    }
+
+    .node p {
+      font-size: 0.94rem;
+    }
+
+    .grid-2,
+    .grid-3,
+    .grid-4 {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid-2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+
+    .card {
+      padding: 18px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .card ul,
+    .flow ul {
+      margin: 12px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .card li,
+    .flow li {
+      margin-bottom: 8px;
+    }
+
+    .flow {
+      padding: 18px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(240,226,206,0.55));
+    }
+
+    .flow .step {
+      display: flex;
+      gap: 12px;
+      margin-top: 12px;
+      align-items: flex-start;
+    }
+
+    .step-num {
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      flex: 0 0 auto;
+      margin-top: 2px;
+    }
+
+    .legend {
+      padding: 16px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      font-size: 0.92rem;
+      background: white;
+    }
+
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 0, 0, 0.1);
+    }
+
+    .footer-note {
+      font-size: 0.92rem;
+      color: var(--muted);
+      margin-top: 12px;
+    }
+
+    @media (max-width: 900px) {
+      .hero,
+      .section {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="eyebrow">System Architecture</div>
+      <h1>Splitwise Project Architecture</h1>
+      <p>
+        This visualization summarizes how the Splitwise project is structured across the browser,
+        frontend SPA, backend API, business-service layer, and MongoDB persistence layer. The
+        application follows a straightforward client-server model with invitation and activity
+        tracking as the main orchestration mechanisms.
+      </p>
+
+      <div class="stats">
+        <div class="stat">
+          <strong>React + Vite</strong>
+          <span>Single-page frontend application</span>
+        </div>
+        <div class="stat">
+          <strong>Spring Boot</strong>
+          <span>REST API and business logic</span>
+        </div>
+        <div class="stat">
+          <strong>MongoDB</strong>
+          <span>Primary document database</span>
+        </div>
+        <div class="stat">
+          <strong>JWT Auth</strong>
+          <span>Stateless API protection</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="legend">
+      <span class="tag"><span class="swatch" style="background: var(--frontend);"></span>Frontend/UI</span>
+      <span class="tag"><span class="swatch" style="background: var(--backend);"></span>API/Backend</span>
+      <span class="tag"><span class="swatch" style="background: var(--service);"></span>Business Services</span>
+      <span class="tag"><span class="swatch" style="background: var(--data);"></span>Data/Persistence</span>
+      <span class="tag"><span class="swatch" style="background: var(--warning);"></span>Cross-cutting/Support</span>
+    </div>
+
+    <section class="section">
+      <h2>1. End-to-End System View</h2>
+      <p>
+        The browser loads a static React application, which communicates with the Spring Boot API
+        over JSON HTTP requests. The backend validates JWTs, executes domain workflows, and
+        persists core documents in MongoDB.
+      </p>
+
+      <div class="diagram">
+        <div class="system-flow">
+          <div class="node-col">
+            <div class="node frontend">
+              <h3>User Browser</h3>
+              <p>Interacts with the app, submits forms, views groups, expenses, invitations, and activity.</p>
+            </div>
+          </div>
+
+          <div class="node-col">
+            <div class="node frontend">
+              <h3>Frontend SPA</h3>
+              <p>React 19 + Vite app with one main UI shell in <code>frontend/src/App.tsx</code>.</p>
+            </div>
+            <div class="node warning">
+              <h3>Local Storage</h3>
+              <p>Stores <code>authToken</code>, <code>currentUserId</code>, and local settle-state hints.</p>
+            </div>
+          </div>
+
+          <div class="node-col">
+            <div class="node backend">
+              <h3>REST Controllers</h3>
+              <p>Auth, Users, Groups, Expenses, Activities, and Notifications endpoints under <code>/api</code>.</p>
+            </div>
+            <div class="node warning">
+              <h3>JWT Filter</h3>
+              <p>Validates Bearer tokens for protected requests before controller execution.</p>
+            </div>
+          </div>
+
+          <div class="node-col">
+            <div class="node service">
+              <h3>Business Services</h3>
+              <p>UserService, GroupService, ExpenseService, NotificationService, EmailService, JwtService.</p>
+            </div>
+            <div class="node warning">
+              <h3>Activity & Invitation Logic</h3>
+              <p>Acts as the coordination layer for invites, owed amounts, and settlement history.</p>
+            </div>
+          </div>
+
+          <div class="node-col">
+            <div class="node data">
+              <h3>MongoDB</h3>
+              <p>Stores users, groups, expenses, activities, and pending invitations as document collections.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>2. Frontend Architecture</h2>
+      <div class="grid-3">
+        <article class="card">
+          <h3>Bootstrap Layer</h3>
+          <ul>
+            <li><code>frontend/src/main.tsx</code> mounts the React app.</li>
+            <li><code>frontend/src/App.tsx</code> holds nearly all runtime UI state.</li>
+            <li><code>vite.config.ts</code> keeps the build setup minimal.</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <h3>Client Responsibilities</h3>
+          <ul>
+            <li>Manage auth token and current user state.</li>
+            <li>Fetch users, groups, expenses, activities, and invitations.</li>
+            <li>Compute UI-only values like user share, totals, and charts.</li>
+            <li>Render tabs for groups, expenses, friends, activity, and account views.</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <h3>API Integration</h3>
+          <ul>
+            <li>Uses <code>authedFetch</code> to add Bearer tokens.</li>
+            <li>Reads API base URL from <code>VITE_API_BASE_URL</code>.</li>
+            <li>Handles <code>401</code> by clearing local session state.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>3. Backend Layering</h2>
+      <div class="grid-4">
+        <article class="card backend">
+          <h3>Controllers</h3>
+          <p>Expose REST endpoints and delegate domain work.</p>
+          <ul>
+            <li>AuthController</li>
+            <li>UserController</li>
+            <li>GroupController</li>
+            <li>ExpenseController</li>
+            <li>ActivityController</li>
+            <li>NotificationController</li>
+          </ul>
+        </article>
+
+        <article class="card service">
+          <h3>Services</h3>
+          <p>Implement orchestration and business rules.</p>
+          <ul>
+            <li>User relationships and invitations</li>
+            <li>Group membership workflows</li>
+            <li>Expense normalization and split validation</li>
+            <li>Settlement activity generation</li>
+          </ul>
+        </article>
+
+        <article class="card data">
+          <h3>Repositories</h3>
+          <p>Spring Data Mongo repositories keep persistence access thin and declarative.</p>
+          <ul>
+            <li>UserRepository</li>
+            <li>GroupRepository</li>
+            <li>ExpenseRepository</li>
+            <li>ActivityRepository</li>
+            <li>PendingInvitationRepository</li>
+          </ul>
+        </article>
+
+        <article class="card warning">
+          <h3>Security & Config</h3>
+          <p>BCrypt, JWT token validation, CORS, and environment-driven configuration live here.</p>
+          <ul>
+            <li><code>SecurityConfig</code></li>
+            <li><code>JwtAuthFilter</code></li>
+            <li><code>JwtService</code></li>
+            <li><code>application.properties</code></li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>4. Core Domain Model</h2>
+      <div class="grid-2">
+        <article class="card data">
+          <h3>Primary Documents</h3>
+          <ul>
+            <li><strong>User</strong>: identity, email, password hash, friend IDs, notification preference</li>
+            <li><strong>Group</strong>: name, owner ID, member IDs</li>
+            <li><strong>Expense</strong>: payer, participants, amount, group reference, custom splits, bill URL</li>
+            <li><strong>Activity</strong>: user-facing event log for owed/settled/group/friend actions</li>
+            <li><strong>PendingInvitation</strong>: friend or group invitation, keyed by email and/or user ID</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <h3>Relationship Summary</h3>
+          <ul>
+            <li>Users have mutual friendships through <code>friendIds</code>.</li>
+            <li>Groups are owned by a user and contain member user IDs.</li>
+            <li>Expenses belong either to a user directly or to a group.</li>
+            <li>Activities are per-user timeline entries rather than shared events.</li>
+            <li>Pending invitations bridge onboarding and membership acceptance flows.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>5. Key Runtime Flows</h2>
+      <div class="grid-2">
+        <article class="flow">
+          <h3>Authentication Flow</h3>
+          <div class="step"><span class="step-num">1</span><div>User submits signup or login from the frontend.</div></div>
+          <div class="step"><span class="step-num">2</span><div><code>/api/auth</code> validates credentials or creates the user.</div></div>
+          <div class="step"><span class="step-num">3</span><div>Backend hashes passwords with BCrypt and returns a JWT token.</div></div>
+          <div class="step"><span class="step-num">4</span><div>Frontend stores the token and sends it on future API requests.</div></div>
+        </article>
+
+        <article class="flow">
+          <h3>Friend Invitation Flow</h3>
+          <div class="step"><span class="step-num">1</span><div>User adds a friend by email from the frontend.</div></div>
+          <div class="step"><span class="step-num">2</span><div>UserService creates a <code>PendingInvitation</code>.</div></div>
+          <div class="step"><span class="step-num">3</span><div>If the invited person later signs up, the invitation is linked to their user ID.</div></div>
+          <div class="step"><span class="step-num">4</span><div>On acceptance, both users are updated and activity entries are written.</div></div>
+        </article>
+
+        <article class="flow">
+          <h3>Group Creation Flow</h3>
+          <div class="step"><span class="step-num">1</span><div>Frontend submits group name, owner, and selected members.</div></div>
+          <div class="step"><span class="step-num">2</span><div>GroupService saves the group with only the owner as an immediate member.</div></div>
+          <div class="step"><span class="step-num">3</span><div>Other selected users receive group invitations instead of direct membership.</div></div>
+          <div class="step"><span class="step-num">4</span><div>Accepting an invite updates the group and appends activities for both sides.</div></div>
+        </article>
+
+        <article class="flow">
+          <h3>Expense & Settlement Flow</h3>
+          <div class="step"><span class="step-num">1</span><div>Frontend builds an expense payload, including custom or percentage splits.</div></div>
+          <div class="step"><span class="step-num">2</span><div>ExpenseService normalizes defaults and validates split totals.</div></div>
+          <div class="step"><span class="step-num">3</span><div>Expense is stored in MongoDB and owed activities are created for participants.</div></div>
+          <div class="step"><span class="step-num">4</span><div>Settlement writes corresponding payer and settler activity records.</div></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>6. Deployment View</h2>
+      <div class="grid-3">
+        <article class="card frontend">
+          <h3>Frontend Deployment</h3>
+          <ul>
+            <li>Built with Vite in the frontend Docker image.</li>
+            <li>Static files copied into Nginx.</li>
+            <li>API base URL baked in via build arg and environment variable.</li>
+          </ul>
+        </article>
+
+        <article class="card backend">
+          <h3>Backend Deployment</h3>
+          <ul>
+            <li>Built as a Spring Boot fat JAR with Maven.</li>
+            <li>Runs in a Java 17 runtime container.</li>
+            <li>Configured through <code>MONGODB_URI</code>, <code>JWT_SECRET</code>, and <code>PORT</code>.</li>
+          </ul>
+        </article>
+
+        <article class="card data">
+          <h3>Persistent Storage</h3>
+          <ul>
+            <li>MongoDB holds the operational data model.</li>
+            <li>No cache, queue, or secondary analytics database is present.</li>
+            <li>Activity and invitation collections act as lightweight workflow state.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>7. Architecture Notes</h2>
+      <div class="grid-2">
+        <article class="card">
+          <h3>Strengths</h3>
+          <ul>
+            <li>Clear backend layering with thin repositories.</li>
+            <li>Simple and understandable document model.</li>
+            <li>Invitation-first design supports both existing users and email onboarding.</li>
+            <li>Activity logs provide a built-in user timeline and operational audit trail.</li>
+          </ul>
+        </article>
+
+        <article class="card warning">
+          <h3>Current Constraints</h3>
+          <ul>
+            <li>The frontend is concentrated in one large component, which mixes view and data logic.</li>
+            <li>JWT validation exists, but authorization is still largely parameter-driven.</li>
+            <li>Settlement state is partly local UI state and partly backend activity history.</li>
+            <li>Email sending is currently a development stub rather than a real integration.</li>
+          </ul>
+        </article>
+      </div>
+
+      <p class="footer-note">
+        File generated as a standalone architecture viewer for the current repository state.
+      </p>
+    </section>
+  </div>
+</body>
+</html>

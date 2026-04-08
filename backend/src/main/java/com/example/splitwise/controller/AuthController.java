@@ -2,7 +2,6 @@ package com.example.splitwise.controller;
 
 import com.example.splitwise.model.User;
 import com.example.splitwise.repository.UserRepository;
-import com.example.splitwise.service.EmailService;
 import com.example.splitwise.service.JwtService;
 import com.example.splitwise.service.UserService;
 import jakarta.validation.constraints.Email;
@@ -20,15 +19,12 @@ public class AuthController {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final EmailService emailService;
     private final JwtService jwtService;
     private final UserService userService;
 
-    public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder,
-                          EmailService emailService, JwtService jwtService, UserService userService) {
+    public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService, UserService userService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.emailService = emailService;
         this.jwtService = jwtService;
         this.userService = userService;
     }
@@ -48,7 +44,6 @@ public class AuthController {
 
         User saved = userRepository.save(user);
         userService.processInvitationsForNewUser(saved);
-        emailService.sendSignupEmail(saved);
         String token = jwtService.generateToken(saved);
         return ResponseEntity.ok(new AuthResponse(saved, token));
     }

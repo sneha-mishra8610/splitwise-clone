@@ -2,38 +2,25 @@ package com.example.splitwise.model;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
-
 import java.time.Instant;
 
 @Document(collection = "pending_invitations")
 public class PendingInvitation {
 
+    @Id
+    private String id;
+    private String inviterUserId;
+    private String inviteeEmail;
+    private String inviteeName;
+    private String inviteeUserId;
+    private InvitationType type;
+    private String groupId;
+    private String groupName;
+    private Instant createdAt = Instant.now();
     public enum InvitationType {
         FRIEND,
         GROUP
     }
-
-    @Id
-    private String id;
-
-    private String inviterUserId;
-
-    private String inviteeEmail;
-
-    private String inviteeName;
-
-    /** Set when the invitee already has an account (e.g. GROUP invitations to friends) */
-    private String inviteeUserId;
-
-    private InvitationType type;
-
-    /** Only set when type == GROUP */
-    private String groupId;
-
-    /** Stored for display convenience */
-    private String groupName;
-
-    private Instant createdAt = Instant.now();
 
     public String getId() {
         return id;

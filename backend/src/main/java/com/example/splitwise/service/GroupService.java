@@ -39,13 +39,8 @@ public class GroupService {
         groupRepository.deleteById(id);
     }
 
-    /**
-     * Creates a group. Only the owner is added as a member immediately.
-     * All other selected members receive GROUP invitations.
-     */
     @Transactional
     public Group createGroup(Group group, Set<String> invitedMemberIds) {
-        // Only the owner is in the group initially
         Set<String> ownerOnly = new HashSet<>();
         ownerOnly.add(group.getOwnerId());
         group.setMemberIds(ownerOnly);
@@ -59,7 +54,6 @@ public class GroupService {
         activity.setDescription("Group \"" + saved.getName() + "\" created.");
         activityRepository.save(activity);
 
-        // Create invitations for each selected friend (except the owner)
         if (invitedMemberIds != null) {
             for (String friendId : invitedMemberIds) {
                 if (friendId.equals(group.getOwnerId())) continue;
@@ -76,20 +70,14 @@ public class GroupService {
                 });
             }
         }
-
         return saved;
     }
 
-    /**
-     * Update a group. If new members are added, create invitations for them
-     * instead of adding directly.
-     */
     @Transactional
     public Group updateGroupWithInvitations(String groupId, String newName, Set<String> requestedMemberIds) {
         Group group = groupRepository.findById(groupId).orElseThrow();
         group.setName(newName);
 
-        // Figure out which members are new (not currently in the group)
         Set<String> currentMembers = new HashSet<>(group.getMemberIds());
         Set<String> newMembers = new HashSet<>();
         for (String mid : requestedMemberIds) {
@@ -98,19 +86,17 @@ public class GroupService {
             }
         }
 
-        // Members can be removed directly (except owner)
         Set<String> updatedMembers = new HashSet<>();
         for (String mid : requestedMemberIds) {
             if (currentMembers.contains(mid)) {
                 updatedMembers.add(mid);
             }
         }
-        // Always keep the owner
+
         updatedMembers.add(group.getOwnerId());
         group.setMemberIds(updatedMembers);
         Group saved = groupRepository.save(group);
 
-        // Create invitations for new members
         for (String friendId : newMembers) {
             userRepository.findById(friendId).ifPresent(friend -> {
                 PendingInvitation inv = new PendingInvitation();
@@ -147,7 +133,6 @@ public class GroupService {
         group.getMemberIds().add(inv.getInviteeUserId());
         groupRepository.save(group);
 
-        // Activity for the user who accepted
         Activity actForUser = new Activity();
         actForUser.setUserId(inv.getInviteeUserId());
         actForUser.setType(Activity.ActivityType.GROUP_CREATED);
@@ -155,7 +140,6 @@ public class GroupService {
         actForUser.setDescription("You joined group \"" + group.getName() + "\".");
         activityRepository.save(actForUser);
 
-        // Activity for the group owner
         User invitee = userRepository.findById(inv.getInviteeUserId()).orElse(null);
         if (invitee != null) {
             Activity actForOwner = new Activity();

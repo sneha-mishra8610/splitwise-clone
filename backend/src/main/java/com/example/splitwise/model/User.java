@@ -3,7 +3,6 @@ package com.example.splitwise.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
-
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
@@ -13,17 +12,14 @@ public class User {
 
     @Id
     private String id;
-
     private String name;
     private String email;
 
     @JsonIgnore
     private String passwordHash;
 
-    // List of userIds that are mutual friends
     private Set<String> friendIds = new HashSet<>();
 
-    // Notification preferences
     private boolean emailNotificationsEnabled = true;
 
     public String getId() {

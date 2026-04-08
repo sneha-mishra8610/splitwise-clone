@@ -46,7 +46,6 @@ public class UserService {
             throw new IllegalArgumentException("Cannot add yourself as a friend");
         }
 
-        // Always create a pending invitation — the recipient must accept
         PendingInvitation invitation = new PendingInvitation();
         invitation.setInviterUserId(userId);
         invitation.setInviteeEmail(email);
@@ -54,7 +53,6 @@ public class UserService {
         Optional<User> existingFriend = userRepository.findByEmail(email);
         if (existingFriend.isPresent()) {
             User friend = existingFriend.get();
-            // Already friends? Skip.
             if (currentUser.getFriendIds().contains(friend.getId())) {
                 throw new IllegalArgumentException("Already friends");
             }
@@ -74,7 +72,6 @@ public class UserService {
         return pendingInvitationRepository.findByInviterUserId(userId);
     }
 
-    /** Friend invitations received by this user (they need to accept/decline) */
     public List<PendingInvitation> getFriendInvitationsForUser(String userId) {
         return pendingInvitationRepository.findByInviteeUserIdAndType(userId, PendingInvitation.InvitationType.FRIEND);
     }
@@ -116,16 +113,10 @@ public class UserService {
         pendingInvitationRepository.deleteById(invitationId);
     }
 
-    /**
-     * Called when a new user signs up — processes all pending invitations for their email.
-     * For FRIEND invitations: sets inviteeUserId so the new user sees them and can accept/decline.
-     * Group invitations are left as-is (they already have inviteeUserId set or use email).
-     */
     @Transactional
     public void processInvitationsForNewUser(User newUser) {
         List<PendingInvitation> invitations = pendingInvitationRepository.findByInviteeEmail(newUser.getEmail());
         for (PendingInvitation inv : invitations) {
-            // Set the inviteeUserId now that we know it
             inv.setInviteeUserId(newUser.getId());
             inv.setInviteeName(newUser.getName());
             pendingInvitationRepository.save(inv);
@@ -172,4 +163,3 @@ public class UserService {
         activityRepository.save(activityForFriend);
     }
 }
-

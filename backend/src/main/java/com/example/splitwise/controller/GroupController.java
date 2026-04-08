@@ -54,7 +54,6 @@ public class GroupController {
         return ResponseEntity.ok().build();
     }
 
-    /** Only return groups the user is a member of */
     @GetMapping
     public List<Group> listGroups(@RequestParam(value = "userId", required = false) String userId) {
         if (userId != null && !userId.isBlank()) {
@@ -63,20 +62,17 @@ public class GroupController {
         return groupRepository.findAll();
     }
 
-    /** Get pending group invitations for a user */
     @GetMapping("/invitations/{userId}")
     public List<PendingInvitation> getGroupInvitations(@PathVariable("userId") String userId) {
         return groupService.getGroupInvitationsForUser(userId);
     }
 
-    /** Accept a group invitation */
     @PostMapping("/invitations/{invitationId}/accept")
     public ResponseEntity<Void> acceptInvitation(@PathVariable("invitationId") String invitationId) {
         groupService.acceptGroupInvitation(invitationId);
         return ResponseEntity.ok().build();
     }
 
-    /** Decline a group invitation */
     @DeleteMapping("/invitations/{invitationId}")
     public ResponseEntity<Void> declineInvitation(@PathVariable("invitationId") String invitationId) {
         groupService.declineGroupInvitation(invitationId);

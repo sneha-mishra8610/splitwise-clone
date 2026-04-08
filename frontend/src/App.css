@@ -324,7 +324,7 @@ select:focus {
 /* ── Expenses columns ── */
 .expenses-columns {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1.5rem;
 }
 
@@ -716,5 +716,11 @@ select:focus {
   .auth-layout {
     flex-direction: column;
     align-items: center;
+  }
+}
+
+@media (max-width: 1200px) and (min-width: 769px) {
+  .expenses-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

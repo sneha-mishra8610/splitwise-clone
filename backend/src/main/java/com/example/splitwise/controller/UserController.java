@@ -67,13 +67,11 @@ public class UserController {
         }
     }
 
-    /** Invitations I sent (pending — friend hasn't signed up yet or hasn't accepted) */
     @GetMapping("/{userId}/invitations")
     public List<PendingInvitation> getPendingInvitations(@PathVariable("userId") String userId) {
         return userService.getPendingInvitationsByInviter(userId);
     }
 
-    /** Friend invitations I received (I need to accept/decline) */
     @GetMapping("/{userId}/friend-invitations")
     public List<PendingInvitation> getFriendInvitations(@PathVariable("userId") String userId) {
         return userService.getFriendInvitationsForUser(userId);

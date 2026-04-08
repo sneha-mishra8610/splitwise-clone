@@ -1,22 +1,36 @@
 package com.example.splitwise.service;
+import com.example.splitwise.model.Expense;
+import com.example.splitwise.model.Group;
+import java.util.*;
 
-import com.example.splitwise.model.User;
-// Firebase import removed
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import com.example.splitwise.repository.*;
 
 @Service
 public class NotificationService {
+    @Autowired
+    private GroupRepository groupRepository;
 
-    private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
+    @Autowired
+    private ExpenseRepository expenseRepository;
 
-    public void notifyActivity(User user, String message) {
-        if (user == null || !user.isEmailNotificationsEnabled()) {
-            return;
+    public List<Expense> getPendingExpenses(String id){
+        List<Expense> unsettled=new ArrayList<>();
+        List<Group> userGroups=groupRepository.findByMemberIdsContaining(id);
+
+        for(Group g:userGroups){
+            List<Expense> expenses=expenseRepository.findByGroupId(g.getId());
+            for(Expense e:expenses){
+                if(!e.getParticipantIds().contains(id)) 
+                    continue;
+                boolean youOwe=!e.getPayerId().equals(id)&&e.getParticipantIds().contains(id);
+                boolean owedToYou=e.getPayerId().equals(id)&&e.getParticipantIds().size()>1;
+                if (youOwe||owedToYou) {
+                    unsettled.add(e);
+                }
+            }
         }
-
-        log.info("Notifying {}: {}", user.getEmail(), message);
+        return unsettled;
     }
 }
-

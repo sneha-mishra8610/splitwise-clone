@@ -33,6 +33,14 @@ type Expense = {
   createdBy?: string
   imageUrl?: string
   customSplits?: Record<string, number>
+  isRecurring?: boolean
+  recurring?: boolean
+  recurrenceStartDate?: string
+  recurrenceType?: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'
+  recurrenceInterval?: number
+  recurrenceEndDate?: string
+  generatedFromRecurringId?: string
+  recurrenceOccurrenceDate?: string
 }
 
 type Activity = {
@@ -58,6 +66,17 @@ type AuthResponse = {
   token: string
 }
 
+function getCurrencySymbol(currency: string) {
+  switch (currency) {
+    case 'USD': return '$'
+    case 'EUR': return '€'
+    case 'GBP': return '£'
+    case 'JPY': return '¥'
+    case 'INR': return '₹'
+    default: return currency
+  }
+}
+
 function App() {
   const [users, setUsers] = useState<User[]>([])
   const [groups, setGroups] = useState<Group[]>([])
@@ -65,6 +84,8 @@ function App() {
   const [groupExpenses, setGroupExpenses] = useState<Expense[]>([])
   const [allGroupExpenses, setAllGroupExpenses] = useState<Expense[]>([])
   const [activities, setActivities] = useState<Activity[]>([])
+  const [activityPage, setActivityPage] = useState(0)
+  const [activityHasMore, setActivityHasMore] = useState(true)
 
   const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem('authToken'))
 
@@ -76,11 +97,13 @@ function App() {
   const [friendAddError, setFriendAddError] = useState('')
   const [friendAddSuccess, setFriendAddSuccess] = useState('')
 
+
   const [groupName, setGroupName] = useState('')
   const [groupMemberIds, setGroupMemberIds] = useState<string[]>([])
 
   const [expenseDescription, setExpenseDescription] = useState('')
   const [expenseAmount, setExpenseAmount] = useState('')
+  const [expenseCurrency, setExpenseCurrency] = useState('INR')
   const [isGroupExpense, setIsGroupExpense] = useState(false)
   const [isFriendExpense, setIsFriendExpense] = useState(false)
   const [selectedFriendId, setSelectedFriendId] = useState('')
@@ -88,6 +111,11 @@ function App() {
   const [expensePayerId, setExpensePayerId] = useState('')
   const [splitMode, setSplitMode] = useState<'equal' | 'unequal' | 'percentage'>('equal')
   const [customSplits, setCustomSplits] = useState<Record<string, string>>({}) 
+  const [isRecurringExpense, setIsRecurringExpense] = useState(false)
+  const [recurrenceStartDate, setRecurrenceStartDate] = useState('')
+  const [recurrenceType, setRecurrenceType] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'>('MONTHLY')
+  const [recurrenceInterval, setRecurrenceInterval] = useState('1')
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState('')
 
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [settledExpenses, setSettledExpenses] = useState<Set<string>>(() => {
@@ -211,12 +239,22 @@ function App() {
     } catch { /* ignore */ }
   }
 
-  async function fetchActivities(userId: string) {
+  async function fetchActivities(userId: string, page = 0, append = false) {
     try {
-      const res = await authedFetch(`${API_BASE}/activities/${userId}`)
+      const res = await authedFetch(`${API_BASE}/activities/${userId}?page=${page}&size=10`)
       if (!res.ok) return
       const data = await res.json()
-      setActivities(Array.isArray(data) ? data : [])
+      if (Array.isArray(data)) {
+        if (append) {
+          setActivities((prev) => [...prev, ...data])
+        } else {
+          setActivities(data)
+        }
+        setActivityHasMore(data.length === 10)
+      } else {
+        if (!append) setActivities([])
+        setActivityHasMore(false)
+      }
     } catch { /* ignore */ }
   }
 
@@ -247,7 +285,8 @@ function App() {
     if (authToken && currentUserId) {
       (async () => {
         await fetchPersonalExpenses(currentUserId)
-        await fetchActivities(currentUserId)
+        setActivityPage(0)
+        await fetchActivities(currentUserId, 0, false)
         await fetchGroups()
         await fetchPendingInvitations()
         await fetchGroupInvitations()
@@ -266,10 +305,6 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGroupId])
-
-  function loginAsUser(userId: string) {
-    setCurrentUserId(userId)
-  }
 
   async function handleAcceptGroupInvitation(invitationId: string) {
     try {
@@ -483,7 +518,7 @@ function App() {
     const payload: Partial<Expense> & { [key: string]: unknown } = {
       description: expenseDescription,
       amount: parseFloat(expenseAmount),
-      currency: 'INR',
+      currency: expenseCurrency,
       payerId: payer,
       createdBy: editingExpense ? editingExpense.createdBy : currentUserId,
       participantIds: useGroup && resolvedGroupId
@@ -502,6 +537,15 @@ function App() {
       return [k, Math.round((pct / 100) * parseFloat(expenseAmount) * 100) / 100]
     }))
   : undefined,
+      isRecurring: isRecurringExpense,
+      recurrenceStartDate: isRecurringExpense && recurrenceStartDate
+        ? new Date(`${recurrenceStartDate}T00:00:00.000Z`).toISOString()
+        : undefined,
+      recurrenceType: isRecurringExpense ? recurrenceType : undefined,
+      recurrenceInterval: isRecurringExpense ? Math.max(1, parseInt(recurrenceInterval || '1', 10)) : undefined,
+      recurrenceEndDate: isRecurringExpense && recurrenceEndDate
+        ? new Date(`${recurrenceEndDate}T00:00:00.000Z`).toISOString()
+        : undefined,
     }
     if (editingExpense) {
       payload.id = editingExpense.id
@@ -527,6 +571,12 @@ function App() {
       setExpensePayerId('')
       setIsFriendExpense(false)
       setSelectedFriendId('')
+      setExpenseCurrency('INR')
+      setIsRecurringExpense(false)
+      setRecurrenceStartDate('')
+      setRecurrenceType('MONTHLY')
+      setRecurrenceInterval('1')
+      setRecurrenceEndDate('')
       setEditingExpense(null)
       await fetchPersonalExpenses(currentUserId)
       if (selectedGroupId) {
@@ -546,6 +596,15 @@ function App() {
     setSelectedGroupId(expense.groupId || '')
     setExpenseImageUrl(expense.imageUrl || '')
     setExpensePayerId(expense.payerId)
+    setIsRecurringExpense(!!(expense.isRecurring || expense.recurring))
+    setRecurrenceStartDate(
+      expense.recurrenceStartDate ? new Date(expense.recurrenceStartDate).toISOString().slice(0, 10) : ''
+    )
+    setRecurrenceType(expense.recurrenceType || 'MONTHLY')
+    setRecurrenceInterval(String(expense.recurrenceInterval || 1))
+    setRecurrenceEndDate(
+      expense.recurrenceEndDate ? new Date(expense.recurrenceEndDate).toISOString().slice(0, 10) : ''
+    )
     if (expense.customSplits && Object.keys(expense.customSplits).length > 0) {
       const values = Object.values(expense.customSplits)
       const allEqual = values.length > 1 && values.every(v => v === values[0])
@@ -603,7 +662,7 @@ function App() {
         if (!allEqual) return 'Custom split'
       }
     }
-    return `Equal share: ₹${equalShare(expense).toFixed(2)} per person`
+    return `Equal share: ${getCurrencySymbol(expense.currency)}${equalShare(expense).toFixed(2)} per person`
   }
 
   function remainingAmount(): number {
@@ -657,6 +716,15 @@ function remainingPercentage(): number {
         .filter((u) => u.name.toLowerCase().includes(friendSearch.toLowerCase()))
         .sort((a, b) => a.name.localeCompare(b.name))
     : []
+
+  const recurringTemplates: Expense[] = [...personalExpenses, ...allGroupExpenses]
+    .filter((e) => e.isRecurring || e.recurring)
+    .filter((e, idx, arr) => arr.findIndex((x) => x.id === e.id) === idx)
+    .sort((a, b) => {
+      const da = a.createdAt ? new Date(a.createdAt).getTime() : 0
+      const db = b.createdAt ? new Date(b.createdAt).getTime() : 0
+      return db - da
+    })
 
   if (!isAuthenticated) {
     return (
@@ -789,12 +857,47 @@ function remainingPercentage(): number {
 
   const sortedGroups = [...filteredGroups].sort((a, b) => a.name.localeCompare(b.name))
 
+
+
+  // Handler for notifications button: fetch unsettled expenses for the current user
+  // Notification modal state
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [pendingExpenses, setPendingExpenses] = useState<Expense[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [notificationError, setNotificationError] = useState('');
+
+  async function handleShowNotifications() {
+    if (!currentUserId) {
+      setNotificationError('No user selected.');
+      setShowNotifications(true);
+      return;
+    }
+    setLoadingNotifications(true);
+    setNotificationError('');
+    try {
+      const res = await authedFetch(`${API_BASE}/notifications/${currentUserId}`);
+      if (res.ok) {
+        const expenses = await res.json();
+        setPendingExpenses(Array.isArray(expenses) ? expenses : []);
+      } else {
+        setNotificationError('Failed to fetch notifications.');
+        setPendingExpenses([]);
+      }
+    } catch {
+      setNotificationError('Could not reach server.');
+      setPendingExpenses([]);
+    } finally {
+      setLoadingNotifications(false);
+      setShowNotifications(true);
+    }
+  }
+
   return (
     <div className="app">
       <header className="app-header">
-        <div className="header-left">
-          <h1>Splitwise</h1>
-          <span className="currency-badge">Currency: ₹ (INR)</span>
+        <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <h1 style={{ margin: 0 }}>Splitwise</h1>
+          <span className="currency-badge">Currency: {getCurrencySymbol(expenseCurrency)} ({expenseCurrency})</span>
         </div>
         <div className="header-center">
           <nav className="tabs">
@@ -829,27 +932,43 @@ function remainingPercentage(): number {
           )}
         </div>
         <div className="header-right">
+          <button onClick={handleShowNotifications} style={{ marginRight: '0.5rem' }}>Notifications</button>
           <button onClick={() => { localStorage.removeItem('authToken'); localStorage.removeItem('currentUserId'); setAuthToken(null); setCurrentUserId('') }}>Log out</button>
         </div>
       </header>
 
+      {/* Notification Modal */}
+      {showNotifications && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+          background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }}>
+          <div style={{ background: '#fff', padding: 24, borderRadius: 8, minWidth: 320, maxWidth: 400, boxShadow: '0 2px 12px rgba(0,0,0,0.2)' }}>
+            <h2>Notifications</h2>
+            {loadingNotifications ? (
+              <div>Loading...</div>
+            ) : notificationError ? (
+              <div style={{ color: 'red' }}>{notificationError}</div>
+            ) : pendingExpenses.length === 0 ? (
+              <div>No unsettled expenses!</div>
+            ) : (
+              <ul style={{ maxHeight: 300, overflowY: 'auto', padding: 0, listStyle: 'none' }}>
+                {pendingExpenses.map(e => (
+                  <li key={e.id} style={{ marginBottom: 12, borderBottom: '1px solid #eee', paddingBottom: 8 }}>
+                    <strong>{e.description}</strong><br />
+                    Amount: {getCurrencySymbol(e.currency)}{e.amount} ({e.currency}) <br />
+                    Type: {e.type}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button style={{ marginTop: 16 }} onClick={() => setShowNotifications(false)}>Close</button>
+          </div>
+        </div>
+      )}
+
       <div className="layout">
         <aside className="sidebar">
-          <section className="panel">
-            <h2>Logged in as</h2>
-            <select
-              value={currentUserId}
-              onChange={(e) => loginAsUser(e.target.value)}
-            >
-              <option value="">Select user</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} ({u.email})
-                </option>
-              ))}
-            </select>
-          </section>
-
           {activeTab === 'account' && currentUser && (
             <section className="panel">
               <h2>Account</h2>
@@ -1149,7 +1268,7 @@ function remainingPercentage(): number {
                       <div className="card-header">
                         <strong>{e.description}</strong>
                         <div style={{ textAlign: 'right' }}>
-                          <span>₹{e.amount.toFixed(2)}</span>
+                          <span>{getCurrencySymbol(e.currency)}{e.amount.toFixed(2)} ({e.currency})</span>
                           {e.createdAt && <div className="muted" style={{ fontSize: '.75rem' }}>{new Date(e.createdAt).toLocaleString()}</div>}
                         </div>
                       </div>
@@ -1163,7 +1282,7 @@ function remainingPercentage(): number {
                             {owesBreakdown(e).map((entry) => (
                               <div key={entry.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.85rem', padding: '2px 0' }}>
                                 <span>{entry.id === currentUserId ? 'You' : entry.name}</span>
-                                <span>₹{entry.owes.toFixed(2)}</span>
+                                <span>{getCurrencySymbol(e.currency)}{entry.owes.toFixed(2)}</span>
                               </div>
                             ))}
                           </div>
@@ -1175,7 +1294,7 @@ function remainingPercentage(): number {
                             <div className="settled-text">✓ Settled up</div>
                           ) : (
                             <div className="owes-row">
-                              <span className="owes-amount">You owe <strong>₹{userShare(e).toFixed(2)}</strong> to {payerName(e.payerId)}</span>
+                              <span className="owes-amount">You owe <strong>{getCurrencySymbol(e.currency)}{userShare(e).toFixed(2)}</strong> to {payerName(e.payerId)}</span>
                               <button className="settle-btn" onClick={() => handleSettleUp(e.id)}>Settle up</button>
                             </div>
                           )
@@ -1187,7 +1306,7 @@ function remainingPercentage(): number {
                             <div className="settled-text">✓ All settled</div>
                           ) : (
                             <div className="owes-row">
-                              <span className="you-paid-info">Others owe you <strong>₹{othersOweTotal(e).toFixed(2)}</strong></span>
+                              <span className="you-paid-info">Others owe you <strong>{getCurrencySymbol(e.currency)}{othersOweTotal(e).toFixed(2)}</strong></span>
                               <button className="settle-btn" onClick={() => handleSettleUp(e.id)}>Settle up</button>
                             </div>
                           )
@@ -1212,9 +1331,51 @@ function remainingPercentage(): number {
           {activeTab === 'expenses' && (
             <div className="expenses-columns">
               <section className="panel">
+                <h3>Recurring Expenses</h3>
+                <ul className="card-list">
+                  {recurringTemplates.map((e) => {
+                    const grpName = e.groupId ? (groups.find((g) => g.id === e.groupId)?.name || 'Unknown group') : null
+                    const cadence = `${e.recurrenceInterval || 1} ${String(e.recurrenceType || 'MONTHLY').toLowerCase()}`
+                    return (
+                      <li key={e.id} className="card">
+                        <div className="card-header">
+                          <div>
+                            <strong>{e.description}</strong>
+                            <div className="muted" style={{ fontSize: '.75rem' }}>
+                              {e.type === 'GROUP' ? `Group: ${grpName}` : 'Personal'}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <span>{getCurrencySymbol(e.currency)}{e.amount.toFixed(2)} ({e.currency})</span>
+                          </div>
+                        </div>
+                        <div className="card-body">
+                          <div className="muted">Repeats every {cadence}</div>
+                          {e.recurrenceStartDate && (
+                            <div className="muted">Start: {new Date(e.recurrenceStartDate).toLocaleDateString()}</div>
+                          )}
+                          {e.recurrenceEndDate && (
+                            <div className="muted">Ends: {new Date(e.recurrenceEndDate).toLocaleDateString()}</div>
+                          )}
+                        </div>
+                        <div className="card-actions">
+                          <button onClick={() => { startEditExpense(e); setShowExpenseModal(true) }}>Edit</button>
+                          {(e.createdBy === currentUserId || (!e.createdBy && e.payerId === currentUserId)) && (
+                            <button onClick={() => handleDeleteExpense(e)}>Delete</button>
+                          )}
+                        </div>
+                      </li>
+                    )
+                  })}
+                  {recurringTemplates.length === 0 && <li className="muted">No recurring expenses yet</li>}
+                </ul>
+              </section>
+
+              <section className="panel">
                 <h3>Personal Expenses</h3>
                 <ul className="card-list">
                   {[...personalExpenses]
+                    .filter((e) => !(e.isRecurring || e.recurring))
                     .sort((a, b) => {
                       const da = a.createdAt ? new Date(a.createdAt).getTime() : 0
                       const db = b.createdAt ? new Date(b.createdAt).getTime() : 0
@@ -1225,7 +1386,7 @@ function remainingPercentage(): number {
                       <div className="card-header">
                         <strong>{e.description}</strong>
                         <div style={{ textAlign: 'right' }}>
-                          <span>₹{e.amount.toFixed(2)}</span>
+                          <span>{getCurrencySymbol(e.currency)}{e.amount.toFixed(2)} ({e.currency})</span>
                           {e.createdAt && <div className="muted" style={{ fontSize: '.75rem' }}>{new Date(e.createdAt).toLocaleString()}</div>}
                         </div>
                       </div>
@@ -1248,6 +1409,7 @@ function remainingPercentage(): number {
                 <h3>Group Expenses</h3>
                 <ul className="card-list">
                   {[...allGroupExpenses]
+                    .filter((e) => !(e.isRecurring || e.recurring))
                     .sort((a, b) => {
                       const da = a.createdAt ? new Date(a.createdAt).getTime() : 0
                       const db = b.createdAt ? new Date(b.createdAt).getTime() : 0
@@ -1263,8 +1425,8 @@ function remainingPercentage(): number {
                               <div className="muted" style={{ fontSize: '.75rem' }}>{grpName}</div>
                             </div>
                             <div style={{ textAlign: 'right' }}>
-                              <span style={{ fontWeight: 600 }}>₹{userShare(e).toFixed(2)}</span>
-                              <div className="muted" style={{ fontSize: '.7rem' }}>Your share of ₹{e.amount.toFixed(2)}</div>
+                              <span style={{ fontWeight: 600 }}>{getCurrencySymbol(e.currency)}{userShare(e).toFixed(2)}</span>
+                              <div className="muted" style={{ fontSize: '.7rem' }}>Your share of {getCurrencySymbol(e.currency)}{e.amount.toFixed(2)}</div>
                               {e.createdAt && <div className="muted" style={{ fontSize: '.75rem' }}>{new Date(e.createdAt).toLocaleString()}</div>}
                             </div>
                           </div>
@@ -1277,7 +1439,7 @@ function remainingPercentage(): number {
                                 <div className="settled-text">✓ Settled up</div>
                               ) : (
                                 <div className="owes-row">
-                                  <span className="owes-amount">You owe <strong>₹{userShare(e).toFixed(2)}</strong></span>
+                                  <span className="owes-amount">You owe <strong>{getCurrencySymbol(e.currency)}{userShare(e).toFixed(2)}</strong></span>
                                   <button className="settle-btn" onClick={() => handleSettleUp(e.id)}>Settle up</button>
                                 </div>
                               )
@@ -1288,7 +1450,7 @@ function remainingPercentage(): number {
                                 <div className="settled-text">✓ All settled</div>
                               ) : (
                                 <div className="owes-row">
-                                  <span className="you-paid-info">Others owe you <strong>₹{othersOweTotal(e).toFixed(2)}</strong></span>
+                                  <span className="you-paid-info">Others owe you <strong>{getCurrencySymbol(e.currency)}{othersOweTotal(e).toFixed(2)}</strong></span>
                                   <button className="settle-btn" onClick={() => handleSettleUp(e.id)}>Settle up</button>
                                 </div>
                               )
@@ -1323,6 +1485,13 @@ function remainingPercentage(): number {
                 ))}
                 {filteredActivities.length === 0 && <li className="muted">No activity yet</li>}
               </ul>
+              {activityHasMore && (
+                <button className="see-more-btn" onClick={async () => {
+                  const nextPage = activityPage + 1;
+                  setActivityPage(nextPage);
+                  await fetchActivities(currentUserId, nextPage, true);
+                }}>See more</button>
+              )}
             </section>
           )}
 
@@ -1400,15 +1569,76 @@ function remainingPercentage(): number {
                 onChange={(e) => setExpenseDescription(e.target.value)}
                 required
               />
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="Amount"
-                value={expenseAmount}
-                onChange={(e) => setExpenseAmount(e.target.value)}
-                required
-              />
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Amount"
+                  value={expenseAmount}
+                  onChange={(e) => setExpenseAmount(e.target.value)}
+                  required
+                  style={{ flex: 2 }}
+                />
+                <select
+                  value={expenseCurrency}
+                  onChange={e => setExpenseCurrency(e.target.value)}
+                  style={{ flex: 1, minWidth: 80 }}
+                  required
+                >
+                  <option value="INR">INR (₹)</option>
+                  <option value="USD">USD ($)</option>
+                  <option value="EUR">EUR (€)</option>
+                  <option value="GBP">GBP (£)</option>
+                  <option value="JPY">JPY (¥)</option>
+                </select>
+              </div>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={isRecurringExpense}
+                  onChange={(e) => setIsRecurringExpense(e.target.checked)}
+                />{' '}
+                Is this a recurring expense?
+              </label>
+              {isRecurringExpense && (
+                <div style={{ display: 'grid', gap: '0.5rem' }}>
+                  <label className="field-label">Start date</label>
+                  <input
+                    type="date"
+                    value={recurrenceStartDate}
+                    onChange={(e) => setRecurrenceStartDate(e.target.value)}
+                    required={isRecurringExpense}
+                  />
+                  <label className="field-label">Recurs every</label>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={recurrenceInterval}
+                      onChange={(e) => setRecurrenceInterval(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <select
+                      value={recurrenceType}
+                      onChange={(e) => setRecurrenceType(e.target.value as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY')}
+                      style={{ flex: 2 }}
+                    >
+                      <option value="DAILY">Day(s)</option>
+                      <option value="WEEKLY">Week(s)</option>
+                      <option value="MONTHLY">Month(s)</option>
+                      <option value="YEARLY">Year(s)</option>
+                    </select>
+                  </div>
+                  <label className="field-label">End date (optional)</label>
+                  <input
+                    type="date"
+                    value={recurrenceEndDate}
+                    onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                  />
+                </div>
+              )}
 
               <label className="field-label" style={{ marginTop: '0.25rem' }}>Expense type</label>
               <div style={{ display: 'flex', gap: '0.75rem' }}>
@@ -1588,7 +1818,17 @@ function remainingPercentage(): number {
               />
               <button type="submit">{editingExpense ? 'Update expense' : 'Add expense'}</button>
               {editingExpense && (
-                <button type="button" onClick={() => { setEditingExpense(null); setExpenseDescription(''); setExpenseAmount(''); setExpenseImageUrl('') }}>
+                <button type="button" onClick={() => {
+                  setEditingExpense(null)
+                  setExpenseDescription('')
+                  setExpenseAmount('')
+                  setExpenseImageUrl('')
+                  setIsRecurringExpense(false)
+                  setRecurrenceStartDate('')
+                  setRecurrenceType('MONTHLY')
+                  setRecurrenceInterval('1')
+                  setRecurrenceEndDate('')
+                }}>
                   Cancel edit
                 </button>
               )}

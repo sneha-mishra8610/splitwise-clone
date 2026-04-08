@@ -1,10 +1,10 @@
 package com.example.splitwise.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
-
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashSet;
@@ -22,34 +22,29 @@ public class Expense {
 
     @Id
     private String id;
-
     private String description;
     private BigDecimal amount;
-
-    // INR by default
     private String currency = "INR";
-
-    // Who paid
     private String payerId;
-
-    // Who is included in the split (userIds). For PERSONAL this will usually be just the owner.
     private Set<String> participantIds = new HashSet<>();
+    private String groupId;
+    private ExpenseType type;
+    private Instant createdAt = Instant.now();
+    private String createdBy;
+    private String imageUrl;
+    @JsonProperty("isRecurring")
+    @JsonAlias({"recurring"})
+    private boolean isRecurring;
+    private String generatedFromRecurringId;
+    private Instant recurrenceOccurrenceDate;
+    private Instant recurrenceStartDate;
+    private String recurrenceType;
+    private Integer recurrenceInterval;
+    private Instant recurrenceEndDate;
+
     @JsonProperty("customSplits")
     @Field("customSplits")
     private Map<String,BigDecimal> customSplits;
-
-    // Optional group reference for group expenses
-    private String groupId;
-
-    private ExpenseType type;
-
-    private Instant createdAt = Instant.now();
-
-    // Who created the expense (may differ from payerId)
-    private String createdBy;
-
-    // Optional URL to an image
-    private String imageUrl;
 
     public String getId() {
         return id;
@@ -139,6 +134,62 @@ public class Expense {
         this.imageUrl = imageUrl;
     }
 
+    public boolean isRecurring() {
+        return isRecurring;
+    }
+
+    public void setRecurring(boolean recurring) {
+        isRecurring = recurring;
+    }
+
+    public String getRecurrenceType() {
+        return recurrenceType;
+    }
+
+    public Instant getRecurrenceStartDate() {
+        return recurrenceStartDate;
+    }
+
+    public void setRecurrenceStartDate(Instant recurrenceStartDate) {
+        this.recurrenceStartDate = recurrenceStartDate;
+    }
+
+    public String getGeneratedFromRecurringId() {
+        return generatedFromRecurringId;
+    }
+
+    public void setGeneratedFromRecurringId(String generatedFromRecurringId) {
+        this.generatedFromRecurringId = generatedFromRecurringId;
+    }
+
+    public Instant getRecurrenceOccurrenceDate() {
+        return recurrenceOccurrenceDate;
+    }
+
+    public void setRecurrenceOccurrenceDate(Instant recurrenceOccurrenceDate) {
+        this.recurrenceOccurrenceDate = recurrenceOccurrenceDate;
+    }
+
+    public void setRecurrenceType(String recurrenceType) {
+        this.recurrenceType = recurrenceType;
+    }
+
+    public Integer getRecurrenceInterval() {
+        return recurrenceInterval;
+    }
+
+    public void setRecurrenceInterval(Integer recurrenceInterval) {
+        this.recurrenceInterval = recurrenceInterval;
+    }
+
+    public Instant getRecurrenceEndDate() {
+        return recurrenceEndDate;
+    }
+
+    public void setRecurrenceEndDate(Instant recurrenceEndDate) {
+        this.recurrenceEndDate = recurrenceEndDate;
+    }
+
     public Map<String,BigDecimal> getCustomSplits(){
         return customSplits;
     }
@@ -162,12 +213,19 @@ public class Expense {
                 type == expense.type &&
                 Objects.equals(createdAt, expense.createdAt) &&
                 Objects.equals(createdBy, expense.createdBy) &&
-                Objects.equals(imageUrl, expense.imageUrl);
+                Objects.equals(imageUrl, expense.imageUrl) &&
+                isRecurring == expense.isRecurring &&
+                Objects.equals(generatedFromRecurringId, expense.generatedFromRecurringId) &&
+                Objects.equals(recurrenceOccurrenceDate, expense.recurrenceOccurrenceDate) &&
+                Objects.equals(recurrenceStartDate, expense.recurrenceStartDate) &&
+                Objects.equals(recurrenceType, expense.recurrenceType) &&
+                Objects.equals(recurrenceInterval, expense.recurrenceInterval) &&
+                Objects.equals(recurrenceEndDate, expense.recurrenceEndDate);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, description, amount, currency, payerId, participantIds, groupId, type, createdAt, createdBy, imageUrl);
+        return Objects.hash(id, description, amount, currency, payerId, participantIds, groupId, type, createdAt, createdBy, imageUrl, isRecurring, generatedFromRecurringId, recurrenceOccurrenceDate, recurrenceStartDate, recurrenceType, recurrenceInterval, recurrenceEndDate);
     }
 
     @Override
@@ -184,6 +242,13 @@ public class Expense {
                 ", createdAt=" + createdAt +
                 ", createdBy='" + createdBy + '\'' +
                 ", imageUrl='" + imageUrl + '\'' +
+                ", isRecurring=" + isRecurring +
+                ", generatedFromRecurringId='" + generatedFromRecurringId + '\'' +
+                ", recurrenceOccurrenceDate=" + recurrenceOccurrenceDate +
+                ", recurrenceStartDate=" + recurrenceStartDate +
+                ", recurrenceType='" + recurrenceType + '\'' +
+                ", recurrenceInterval=" + recurrenceInterval +
+                ", recurrenceEndDate=" + recurrenceEndDate +
                 '}';
     }
 }

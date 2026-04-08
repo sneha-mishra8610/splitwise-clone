@@ -9,6 +9,14 @@ import java.util.Objects;
 @Document(collection = "activities")
 public class Activity {
 
+    @Id
+    private String id;
+    private String userId;
+    private ActivityType type;
+    private String description;
+    private String relatedExpenseId;
+    private String relatedGroupId;
+    private Instant createdAt = Instant.now();
     public enum ActivityType {
         FRIEND_ADDED,
         GROUP_CREATED,
@@ -18,21 +26,6 @@ public class Activity {
         EXPENSE_SETTLED,
         EXPENSE_OWED
     }
-
-    @Id
-    private String id;
-
-    private String userId;
-
-    private ActivityType type;
-
-    private String description;
-
-    private String relatedExpenseId;
-
-    private String relatedGroupId;
-
-    private Instant createdAt = Instant.now();
 
     public String getId() {
         return id;

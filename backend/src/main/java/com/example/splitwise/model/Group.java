@@ -2,7 +2,6 @@ package com.example.splitwise.model;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
-
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
@@ -12,43 +11,30 @@ public class Group {
 
     @Id
     private String id;
-
     private String name;
-
-    // Owner of the group (userId)
     private String ownerId;
-
-    // Members of the group (userIds)
     private Set<String> memberIds = new HashSet<>();
-
     public String getId() {
         return id;
     }
-
     public void setId(String id) {
         this.id = id;
     }
-
     public String getName() {
         return name;
     }
-
     public void setName(String name) {
         this.name = name;
     }
-
     public String getOwnerId() {
         return ownerId;
     }
-
     public void setOwnerId(String ownerId) {
         this.ownerId = ownerId;
     }
-
     public Set<String> getMemberIds() {
         return memberIds;
     }
-
     public void setMemberIds(Set<String> memberIds) {
         this.memberIds = memberIds;
     }

@@ -5,9 +5,14 @@ import com.example.splitwise.model.Expense;
 import com.example.splitwise.repository.ActivityRepository;
 import com.example.splitwise.repository.ExpenseRepository;
 import com.example.splitwise.repository.UserRepository;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,38 +25,41 @@ public class ExpenseService {
     private final ExpenseRepository expenseRepository;
     private final ActivityRepository activityRepository;
     private final UserRepository userRepository;
-    private final NotificationService notificationService;
 
     public ExpenseService(ExpenseRepository expenseRepository, ActivityRepository activityRepository,
-                          UserRepository userRepository, NotificationService notificationService) {
+                          UserRepository userRepository) {
         this.expenseRepository = expenseRepository;
         this.activityRepository = activityRepository;
         this.userRepository = userRepository;
-        this.notificationService = notificationService;
     }
 
     public Expense createExpense(Expense expense) {
+        generateDueRecurringExpenses();
         if (expense.getId() != null && expense.getId().isBlank()) {
             expense.setId(null);
         }
         normalizeExpense(expense);
+        validateCurrency(expense);
+        validateRecurrence(expense);
         validateCustomSplits(expense);
+
+        System.out.println("[ExpenseService] Received currency: " + expense.getCurrency());
 
         Expense saved = expenseRepository.save(expense);
 
-        recordAndNotify(expense.getPayerId(), saved, Activity.ActivityType.EXPENSE_ADDED, "added");
+        recordExpenseAddedActivities(saved);
         recordOwedActivities(saved);
 
         return saved;
     }
 
     public Expense updateExpense(Expense expense) {
+        generateDueRecurringExpenses();
         normalizeExpense(expense);
+        validateRecurrence(expense);
         validateCustomSplits(expense);
 
         Expense saved = expenseRepository.save(expense);
-
-        recordAndNotify(expense.getPayerId(), saved, Activity.ActivityType.EXPENSE_UPDATED, "updated");
 
         return saved;
     }
@@ -70,7 +78,6 @@ public class ExpenseService {
     public void deleteExpense(String id) {
         expenseRepository.findById(id).ifPresent(expense -> {
             expenseRepository.deleteById(id);
-            recordAndNotify(expense.getPayerId(), expense, Activity.ActivityType.EXPENSE_DELETED, "deleted");
         });
     }
 
@@ -81,27 +88,136 @@ public class ExpenseService {
         if (expense.getParticipantIds() == null || expense.getParticipantIds().isEmpty()) {
             expense.setParticipantIds(Set.of(expense.getPayerId()));
         }
+        if (!expense.isRecurring()) {
+            expense.setGeneratedFromRecurringId(null);
+            expense.setRecurrenceOccurrenceDate(null);
+            expense.setRecurrenceStartDate(null);
+            expense.setRecurrenceType(null);
+            expense.setRecurrenceInterval(null);
+            expense.setRecurrenceEndDate(null);
+        }
     }
 
-    private void recordAndNotify(String payerId, Expense expense, Activity.ActivityType type, String verb) {
-        if (payerId == null) {
-            return;
+    private void validateRecurrence(Expense expense) {
+        if (!expense.isRecurring()) return;
+
+        String recurrenceType = expense.getRecurrenceType();
+        if (recurrenceType == null || recurrenceType.isBlank()) {
+            throw new IllegalArgumentException("recurrenceType is required for recurring expenses");
+        }
+        if (expense.getRecurrenceStartDate() == null) {
+            throw new IllegalArgumentException("recurrenceStartDate is required for recurring expenses");
         }
 
-        Activity activity = new Activity();
-        activity.setUserId(payerId);
-        activity.setType(type);
-        activity.setRelatedExpenseId(expense.getId());
-        activity.setDescription("Expense \"" + expense.getDescription() + "\" of " + expense.getAmount() + " " + expense.getCurrency() + " " + verb + ".");
-        activityRepository.save(activity);
-
-        userRepository.findById(payerId).ifPresent(user -> {
-            try {
-                notificationService.notifyActivity(user, activity.getDescription());
-            } catch (Exception e) {
-                // ignore for now
+        String normalizedType = recurrenceType.trim().toUpperCase();
+        String[] allowedTypes = {"DAILY", "WEEKLY", "MONTHLY", "YEARLY"};
+        boolean validType = false;
+        for (String allowed : allowedTypes) {
+            if (allowed.equals(normalizedType)) {
+                validType = true;
+                break;
             }
-        });
+        }
+        if (!validType) {
+            throw new IllegalArgumentException("Unsupported recurrenceType: " + recurrenceType);
+        }
+        expense.setRecurrenceType(normalizedType);
+
+        Integer recurrenceInterval = expense.getRecurrenceInterval();
+        if (recurrenceInterval == null || recurrenceInterval < 1) {
+            throw new IllegalArgumentException("recurrenceInterval must be at least 1");
+        }
+        if (expense.getRecurrenceEndDate() != null &&
+                expense.getRecurrenceEndDate().isBefore(expense.getRecurrenceStartDate())) {
+            throw new IllegalArgumentException("recurrenceEndDate cannot be before recurrenceStartDate");
+        }
+    }
+
+    @Scheduled(fixedDelay = 60 * 60 * 1000)
+    public void scheduledRecurringGeneration() {
+        generateDueRecurringExpenses();
+    }
+
+    public void generateDueRecurringExpenses() {
+        Instant now = Instant.now();
+        List<Expense> recurringTemplates = expenseRepository.findByIsRecurringTrueAndGeneratedFromRecurringIdIsNull();
+        for (Expense template : recurringTemplates) {
+            generateOccurrencesForTemplate(template, now);
+        }
+    }
+
+    private void generateOccurrencesForTemplate(Expense template, Instant now) {
+        if (template.getId() == null || template.getRecurrenceStartDate() == null) return;
+
+        Instant cursor = template.getRecurrenceStartDate();
+        Instant end = template.getRecurrenceEndDate();
+        while (!cursor.isAfter(now)) {
+            if (end != null && cursor.isAfter(end)) {
+                break;
+            }
+            boolean exists = expenseRepository.existsByGeneratedFromRecurringIdAndRecurrenceOccurrenceDate(
+                    template.getId(), cursor
+            );
+            if (!exists) {
+                Expense generated = buildGeneratedExpense(template, cursor);
+                Expense saved = expenseRepository.save(generated);
+                recordExpenseAddedActivities(saved);
+                recordOwedActivities(saved);
+            }
+            cursor = nextOccurrence(cursor, template.getRecurrenceType(), template.getRecurrenceInterval());
+            if (cursor == null) break;
+        }
+    }
+
+    private Expense buildGeneratedExpense(Expense template, Instant occurrenceDate) {
+        Expense generated = new Expense();
+        generated.setDescription(template.getDescription());
+        generated.setAmount(template.getAmount());
+        generated.setCurrency(template.getCurrency());
+        generated.setPayerId(template.getPayerId());
+        generated.setParticipantIds(template.getParticipantIds());
+        generated.setGroupId(template.getGroupId());
+        generated.setType(template.getType());
+        generated.setCreatedAt(occurrenceDate);
+        generated.setCreatedBy(template.getCreatedBy());
+        generated.setImageUrl(template.getImageUrl());
+        generated.setCustomSplits(template.getCustomSplits());
+
+        generated.setRecurring(false);
+        generated.setGeneratedFromRecurringId(template.getId());
+        generated.setRecurrenceOccurrenceDate(occurrenceDate);
+        return generated;
+    }
+
+    private Instant nextOccurrence(Instant current, String recurrenceType, Integer interval) {
+        if (recurrenceType == null || interval == null || interval < 1) return null;
+        ZonedDateTime utcDateTime = current.atZone(ZoneOffset.UTC);
+        ZonedDateTime next = switch (recurrenceType) {
+            case "DAILY" -> utcDateTime.plusDays(interval);
+            case "WEEKLY" -> utcDateTime.plusWeeks(interval);
+            case "MONTHLY" -> utcDateTime.plusMonths(interval);
+            case "YEARLY" -> utcDateTime.plusYears(interval);
+            default -> null;
+        };
+        return next == null ? null : next.toInstant();
+    }
+
+    private void validateCurrency(Expense expense) {
+        String currency = expense.getCurrency();
+        if (currency == null) return;
+        // Allowed currencies
+        String[] allowed = {"INR", "USD", "EUR", "GBP", "JPY"};
+        boolean valid = false;
+        for (String c : allowed) {
+            if (c.equalsIgnoreCase(currency)) {
+                expense.setCurrency(c); // normalize case
+                valid = true;
+                break;
+            }
+        }
+        if (!valid) {
+            throw new IllegalArgumentException("Unsupported currency: " + currency);
+        }
     }
 
     private void recordOwedActivities(Expense expense) {
@@ -126,11 +242,31 @@ public class ExpenseService {
         }
     }
 
+    private void recordExpenseAddedActivities(Expense expense) {
+        if (expense.getParticipantIds() == null || expense.getParticipantIds().isEmpty()) return;
+        String recurrenceSuffix = "";
+        if (expense.getGeneratedFromRecurringId() != null) {
+            recurrenceSuffix = " (recurring";
+            if (expense.getRecurrenceOccurrenceDate() != null) {
+                recurrenceSuffix += " - " + expense.getRecurrenceOccurrenceDate().toString();
+            }
+            recurrenceSuffix += ")";
+        }
+        for (String pid : expense.getParticipantIds()) {
+            Activity a = new Activity();
+            a.setUserId(pid);
+            a.setType(Activity.ActivityType.EXPENSE_ADDED);
+            a.setRelatedExpenseId(expense.getId());
+            a.setRelatedGroupId(expense.getGroupId());
+            a.setDescription("Expense added: \"" + expense.getDescription() + "\"" + recurrenceSuffix + ".");
+            activityRepository.save(a);
+        }
+    }
+
     public void settleExpense(String expenseId, String settlingUserId) {
         Expense expense = expenseRepository.findById(expenseId)
                 .orElseThrow(() -> new IllegalArgumentException("Expense not found"));
 
-        // If the payer clicks settle, settle all participants at once
         if (settlingUserId.equals(expense.getPayerId())) {
             settleAll(expenseId);
             return;
@@ -141,18 +277,18 @@ public class ExpenseService {
         String settlerName = userRepository.findById(settlingUserId)
                 .map(u -> u.getName()).orElse("Someone");
         BigDecimal owed = getOwedAmount(expense, settlingUserId);
-        // Skip if already settled for this user+expense
+
         if (activityRepository.existsByRelatedExpenseIdAndUserIdAndType(expenseId, settlingUserId, Activity.ActivityType.EXPENSE_SETTLED)) {
             return;
         }
-        // Activity for settler: "You paid ₹X to [payer]"
+
         Activity settlerActivity = new Activity();
         settlerActivity.setUserId(settlingUserId);
         settlerActivity.setType(Activity.ActivityType.EXPENSE_SETTLED);
         settlerActivity.setRelatedExpenseId(expenseId);
         settlerActivity.setDescription("You paid \u20b9" + owed + " to " + payerName + " for \"" + expense.getDescription() + "\".");
         activityRepository.save(settlerActivity);
-        // Activity for payer: "Received ₹X from [settler]"
+
         Activity payerActivity = new Activity();
         payerActivity.setUserId(expense.getPayerId());
         payerActivity.setType(Activity.ActivityType.EXPENSE_SETTLED);
@@ -198,10 +334,12 @@ public class ExpenseService {
     }
 
     public List<Expense> listGroupExpenses(String groupId) {
+        generateDueRecurringExpenses();
         return expenseRepository.findByGroupId(groupId);
     }
 
     public List<Expense> listPersonalExpenses(String userId) {
+        generateDueRecurringExpenses();
         return expenseRepository.findByPayerIdAndType(userId, Expense.ExpenseType.PERSONAL);
     }
 
