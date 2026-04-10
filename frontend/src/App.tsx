@@ -1,3 +1,4 @@
+
 import './App.css'
 import React, { useEffect, useState } from 'react'
 
@@ -78,6 +79,27 @@ function getCurrencySymbol(currency: string) {
 }
 
 function App() {
+    // ...existing useState hooks...
+
+    // Reset all expense form fields to their initial values
+    function resetExpenseForm() {
+      setExpenseDescription('');
+      setExpenseAmount('');
+      setExpenseCurrency('INR');
+      setIsGroupExpense(false);
+      setIsFriendExpense(false);
+      setSelectedFriendId('');
+      setExpenseImageUrl('');
+      setExpensePayerId('');
+      setSplitMode('equal');
+      setCustomSplits({});
+      setIsRecurringExpense(false);
+      setRecurrenceStartDate('');
+      setRecurrenceType('MONTHLY');
+      setRecurrenceInterval('1');
+      setRecurrenceEndDate('');
+      setSelectedGroupId('');
+    }
   const [theme, setTheme] = useState<'dark' | 'light'>(() =>
     localStorage.getItem('theme') === 'light' ? 'light' : 'dark',
   )
@@ -1574,17 +1596,29 @@ function remainingPercentage(): number {
       </div>
 
       {/* ── FAB (floating + button) ── */}
-      <button className="fab" title="Add expense" onClick={() => setShowExpenseModal(true)}>
+      <button className="fab" title="Add expense" onClick={() => {
+        resetExpenseForm();
+        setEditingExpense(null);
+        setShowExpenseModal(true);
+      }}>
         ＋
       </button>
 
       {/* ── Expense modal ── */}
       {showExpenseModal && (
-        <div className="modal-overlay" onClick={() => { setShowExpenseModal(false); setEditingExpense(null) }}>
+        <div className="modal-overlay" onClick={() => {
+          setShowExpenseModal(false);
+          setEditingExpense(null);
+          if (!editingExpense) resetExpenseForm();
+        }}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>{editingExpense ? 'Edit Expense' : 'Add Expense'}</h2>
-              <button className="modal-close" onClick={() => { setShowExpenseModal(false); setEditingExpense(null) }}>✕</button>
+              <button className="modal-close" onClick={() => {
+                setShowExpenseModal(false);
+                setEditingExpense(null);
+                if (!editingExpense) resetExpenseForm();
+              }}>✕</button>
             </div>
             <form onSubmit={(e) => { handleSaveExpense(e); setShowExpenseModal(false) }} className="form-vertical">
               <input
