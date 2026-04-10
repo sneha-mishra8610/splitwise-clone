@@ -552,7 +552,7 @@ function App() {
       recurrenceStartDate: isRecurringExpense && recurrenceStartDate
         ? new Date(`${recurrenceStartDate}T00:00:00.000Z`).toISOString()
         : undefined,
-      recurrenceType: isRecurringExpense ? recurrenceType : undefined,
+      recurrenceType: isRecurringExpense ? recurrenceType.toUpperCase() as "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY" | "CUSTOM" : undefined,
       recurrenceInterval: isRecurringExpense ? Math.max(1, parseInt(recurrenceInterval || '1', 10)) : undefined,
       recurrenceEndDate: isRecurringExpense && recurrenceEndDate
         ? new Date(`${recurrenceEndDate}T00:00:00.000Z`).toISOString()
@@ -1637,16 +1637,17 @@ function remainingPercentage(): number {
                   />
                   <label className="field-label">Recurs every</label>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={recurrenceInterval}
-                      onChange={(e) => setRecurrenceInterval(e.target.value)}
-                      style={{ flex: 1 }}
-                      disabled={recurrenceType !== 'CUSTOM'}
-                      placeholder={recurrenceType === 'CUSTOM' ? 'Days' : ''}
-                    />
+                    {recurrenceType === 'CUSTOM' && (
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={recurrenceInterval}
+                        onChange={(e) => setRecurrenceInterval(e.target.value)}
+                        style={{ flex: 1 }}
+                        placeholder="Days"
+                      />
+                    )}
                     <select
                       value={recurrenceType}
                       onChange={(e) => {
