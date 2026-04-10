@@ -36,7 +36,7 @@ type Expense = {
   isRecurring?: boolean
   recurring?: boolean
   recurrenceStartDate?: string
-  recurrenceType?: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'
+  recurrenceType?: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY' | 'CUSTOM'
   recurrenceInterval?: number
   recurrenceEndDate?: string
   generatedFromRecurringId?: string
@@ -116,7 +116,7 @@ function App() {
   const [customSplits, setCustomSplits] = useState<Record<string, string>>({}) 
   const [isRecurringExpense, setIsRecurringExpense] = useState(false)
   const [recurrenceStartDate, setRecurrenceStartDate] = useState('')
-  const [recurrenceType, setRecurrenceType] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'>('MONTHLY')
+  const [recurrenceType, setRecurrenceType] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY' | 'CUSTOM'>('MONTHLY')
   const [recurrenceInterval, setRecurrenceInterval] = useState('1')
   const [recurrenceEndDate, setRecurrenceEndDate] = useState('')
 
@@ -1378,7 +1378,9 @@ function remainingPercentage(): number {
                           )}
                         </div>
                         <div className="card-actions">
-                          <button onClick={() => { startEditExpense(e); setShowExpenseModal(true) }}>Edit</button>
+                          {e.createdBy === currentUserId && (
+                            <button onClick={() => { startEditExpense(e); setShowExpenseModal(true) }}>Edit</button>
+                          )}
                           {(e.createdBy === currentUserId || (!e.createdBy && e.payerId === currentUserId)) && (
                             <button onClick={() => handleDeleteExpense(e)}>Delete</button>
                           )}
@@ -1412,12 +1414,14 @@ function remainingPercentage(): number {
                       <div className="card-body">
                         {e.imageUrl && <a href={e.imageUrl} target="_blank" rel="noreferrer">View bill</a>}
                       </div>
-                      <div className="card-actions">
-                        <button onClick={() => { startEditExpense(e); setShowExpenseModal(true) }}>Edit</button>
-                        {(e.createdBy === currentUserId || (!e.createdBy && e.payerId === currentUserId)) && (
-                          <button onClick={() => handleDeleteExpense(e)}>Delete</button>
-                        )}
-                      </div>
+                        <div className="card-actions">
+                          {e.createdBy === currentUserId && (
+                            <button onClick={() => { startEditExpense(e); setShowExpenseModal(true) }}>Edit</button>
+                          )}
+                          {(e.createdBy === currentUserId || (!e.createdBy && e.payerId === currentUserId)) && (
+                            <button onClick={() => handleDeleteExpense(e)}>Delete</button>
+                          )}
+                        </div>
                     </li>
                   ))}
                   {personalExpenses.length === 0 && <li className="muted">No personal expenses yet</li>}
@@ -1477,7 +1481,9 @@ function remainingPercentage(): number {
                             {e.imageUrl && <a href={e.imageUrl} target="_blank" rel="noreferrer">View bill</a>}
                           </div>
                           <div className="card-actions">
-                            <button onClick={() => { startEditExpense(e); setShowExpenseModal(true) }}>Edit</button>
+                            {e.createdBy === currentUserId && (
+                              <button onClick={() => { startEditExpense(e); setShowExpenseModal(true) }}>Edit</button>
+                            )}
                             {(e.createdBy === currentUserId || (!e.createdBy && e.payerId === currentUserId)) && (
                               <button onClick={() => handleDeleteExpense(e)}>Delete</button>
                             )}
@@ -1638,16 +1644,23 @@ function remainingPercentage(): number {
                       value={recurrenceInterval}
                       onChange={(e) => setRecurrenceInterval(e.target.value)}
                       style={{ flex: 1 }}
+                      disabled={recurrenceType !== 'CUSTOM'}
+                      placeholder={recurrenceType === 'CUSTOM' ? 'Days' : ''}
                     />
                     <select
                       value={recurrenceType}
-                      onChange={(e) => setRecurrenceType(e.target.value as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY')}
+                      onChange={(e) => {
+                        const val = e.target.value as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY' | 'CUSTOM'
+                        setRecurrenceType(val)
+                        if (val !== 'CUSTOM') setRecurrenceInterval('1')
+                      }}
                       style={{ flex: 2 }}
                     >
                       <option value="DAILY">Day(s)</option>
                       <option value="WEEKLY">Week(s)</option>
                       <option value="MONTHLY">Month(s)</option>
                       <option value="YEARLY">Year(s)</option>
+                      <option value="CUSTOM">Custom (N days)</option>
                     </select>
                   </div>
                   <label className="field-label">End date (optional)</label>

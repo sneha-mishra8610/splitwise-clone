@@ -53,7 +53,12 @@ public class ExpenseService {
         return saved;
     }
 
-    public Expense updateExpense(Expense expense) {
+    public Expense updateExpense(Expense expense,String userId) {
+        Expense existing=expenseRepository.findById(expense.getId())
+        .orElseThrow(()->new IllegalArgumentException("Expense not found"));
+        if(existing.getCreatedBy()==null||!existing.getCreatedBy().equals(userId)){
+            throw new SecurityException("Only the creator can edit this expense.");
+        }
         generateDueRecurringExpenses();
         normalizeExpense(expense);
         validateRecurrence(expense);
@@ -99,20 +104,19 @@ public class ExpenseService {
     }
 
     private void validateRecurrence(Expense expense) {
-        if (!expense.isRecurring()) return;
-
-        String recurrenceType = expense.getRecurrenceType();
-        if (recurrenceType == null || recurrenceType.isBlank()) {
+        if (!expense.isRecurring()) 
+            return;
+        String recurrenceType=expense.getRecurrenceType();
+        if (recurrenceType==null||recurrenceType.isBlank()) {
             throw new IllegalArgumentException("recurrenceType is required for recurring expenses");
         }
-        if (expense.getRecurrenceStartDate() == null) {
+        if (expense.getRecurrenceStartDate()==null) {
             throw new IllegalArgumentException("recurrenceStartDate is required for recurring expenses");
         }
-
-        String normalizedType = recurrenceType.trim().toUpperCase();
-        String[] allowedTypes = {"DAILY", "WEEKLY", "MONTHLY", "YEARLY"};
-        boolean validType = false;
-        for (String allowed : allowedTypes) {
+        String normalizedType=recurrenceType.trim().toUpperCase();
+        String[] allowedTypes={"DAILY","WEEKLY","MONTHLY","YEARLY","CUSTOM"};
+        boolean validType=false;
+        for (String allowed:allowedTypes) {
             if (allowed.equals(normalizedType)) {
                 validType = true;
                 break;
@@ -121,13 +125,17 @@ public class ExpenseService {
         if (!validType) {
             throw new IllegalArgumentException("Unsupported recurrenceType: " + recurrenceType);
         }
-        expense.setRecurrenceType(normalizedType);
-
         Integer recurrenceInterval = expense.getRecurrenceInterval();
+        if ("CUSTOM".equals(normalizedType)) {
         if (recurrenceInterval == null || recurrenceInterval < 1) {
+            throw new IllegalArgumentException("recurrenceInterval must be at least 1 for CUSTOM recurrence");
+        }
+        }
+        expense.setRecurrenceType(normalizedType);
+        if (recurrenceInterval==null||recurrenceInterval<1) {
             throw new IllegalArgumentException("recurrenceInterval must be at least 1");
         }
-        if (expense.getRecurrenceEndDate() != null &&
+        if (expense.getRecurrenceEndDate()!=null&&
                 expense.getRecurrenceEndDate().isBefore(expense.getRecurrenceStartDate())) {
             throw new IllegalArgumentException("recurrenceEndDate cannot be before recurrenceStartDate");
         }
@@ -139,33 +147,34 @@ public class ExpenseService {
     }
 
     public void generateDueRecurringExpenses() {
-        Instant now = Instant.now();
-        List<Expense> recurringTemplates = expenseRepository.findByIsRecurringTrueAndGeneratedFromRecurringIdIsNull();
-        for (Expense template : recurringTemplates) {
-            generateOccurrencesForTemplate(template, now);
+        Instant now=Instant.now();
+        List<Expense> recurringTemplates=expenseRepository.findByIsRecurringTrueAndGeneratedFromRecurringIdIsNull();
+        for (Expense template:recurringTemplates) {
+            generateOccurrencesForTemplate(template,now);
         }
     }
 
     private void generateOccurrencesForTemplate(Expense template, Instant now) {
-        if (template.getId() == null || template.getRecurrenceStartDate() == null) return;
-
-        Instant cursor = template.getRecurrenceStartDate();
-        Instant end = template.getRecurrenceEndDate();
+        if (template.getId()==null||template.getRecurrenceStartDate() == null) 
+            return;
+        Instant cursor=template.getRecurrenceStartDate();
+        Instant end=template.getRecurrenceEndDate();
         while (!cursor.isAfter(now)) {
-            if (end != null && cursor.isAfter(end)) {
+            if (end!=null&&cursor.isAfter(end)) {
                 break;
             }
-            boolean exists = expenseRepository.existsByGeneratedFromRecurringIdAndRecurrenceOccurrenceDate(
-                    template.getId(), cursor
+            boolean exists=expenseRepository.existsByGeneratedFromRecurringIdAndRecurrenceOccurrenceDate(
+                    template.getId(),cursor
             );
             if (!exists) {
-                Expense generated = buildGeneratedExpense(template, cursor);
-                Expense saved = expenseRepository.save(generated);
+                Expense generated=buildGeneratedExpense(template,cursor);
+                Expense saved=expenseRepository.save(generated);
                 recordExpenseAddedActivities(saved);
                 recordOwedActivities(saved);
             }
-            cursor = nextOccurrence(cursor, template.getRecurrenceType(), template.getRecurrenceInterval());
-            if (cursor == null) break;
+            cursor=nextOccurrence(cursor,template.getRecurrenceType(),template.getRecurrenceInterval());
+            if (cursor==null) 
+                break;
         }
     }
 
@@ -197,6 +206,7 @@ public class ExpenseService {
             case "WEEKLY" -> utcDateTime.plusWeeks(interval);
             case "MONTHLY" -> utcDateTime.plusMonths(interval);
             case "YEARLY" -> utcDateTime.plusYears(interval);
+            case "CUSTOM" -> utcDateTime.plusDays(interval);
             default -> null;
         };
         return next == null ? null : next.toInstant();
@@ -205,7 +215,6 @@ public class ExpenseService {
     private void validateCurrency(Expense expense) {
         String currency = expense.getCurrency();
         if (currency == null) return;
-        // Allowed currencies
         String[] allowed = {"INR", "USD", "EUR", "GBP", "JPY"};
         boolean valid = false;
         for (String c : allowed) {
