@@ -1,4 +1,3 @@
-
 import './App.css'
 import React, { useEffect, useState } from 'react'
 
@@ -79,6 +78,49 @@ function getCurrencySymbol(currency: string) {
 }
 
 function App() {
+  // ...existing useState hooks...
+
+  // Place currentUserId, selectedGroupId, and users useState hooks at the top
+  const [currentUserId, setCurrentUserId] = useState<string>(() => localStorage.getItem('currentUserId') || '');
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('');
+  const [users, setUsers] = useState<User[]>([]);
+
+  // Group chat state: map groupId to array of messages (after all useState hooks)
+  const [groupChats, setGroupChats] = useState<{ [groupId: string]: { user: string; message: string; timestamp: string }[] }>({});
+  const [groupChatInputs, setGroupChatInputs] = useState<{ [groupId: string]: string }>({});
+
+  // Notification modal state (after all useState hooks)
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [pendingExpenses, setPendingExpenses] = useState<Expense[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [notificationError, setNotificationError] = useState('');
+
+  // ...all other useState hooks...
+
+  // ...all other useState hooks...
+
+  // Place after all useState hooks, and after users is defined
+  // (moved below users useState hook)
+  // (removed duplicate users declaration)
+  // ...other useState hooks...
+
+  // Place after all useState hooks, and after users is defined
+  const currentUser: User | null = users.find((u) => u.id === currentUserId) || null;
+  const currentUserName = currentUser?.name || 'You';
+
+  // Send message handler for group chat
+  function handleSendGroupChatMessage(groupId: string) {
+    const input = groupChatInputs[groupId]?.trim();
+    if (!input) return;
+    setGroupChats(prev => ({
+      ...prev,
+      [groupId]: [
+        ...(prev[groupId] || []),
+        { user: currentUserName, message: input, timestamp: new Date().toISOString() }
+      ]
+    }));
+    setGroupChatInputs(prev => ({ ...prev, [groupId]: '' }));
+  }
     // ...existing useState hooks...
 
     // Reset all expense form fields to their initial values
@@ -103,7 +145,7 @@ function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>(() =>
     localStorage.getItem('theme') === 'light' ? 'light' : 'dark',
   )
-  const [users, setUsers] = useState<User[]>([])
+  // (removed duplicate users declaration)
   const [groups, setGroups] = useState<Group[]>([])
   const [personalExpenses, setPersonalExpenses] = useState<Expense[]>([])
   const [groupExpenses, setGroupExpenses] = useState<Expense[]>([])
@@ -114,14 +156,12 @@ function App() {
 
   const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem('authToken'))
 
-  const [currentUserId, setCurrentUserId] = useState<string>(() => localStorage.getItem('currentUserId') || '')
-  const [selectedGroupId, setSelectedGroupId] = useState<string>('')
+  // (removed duplicate selectedGroupId declaration)
 
   const [friendNameToAdd, setFriendNameToAdd] = useState('')
   const [friendEmailToAdd, setFriendEmailToAdd] = useState('')
   const [friendAddError, setFriendAddError] = useState('')
   const [friendAddSuccess, setFriendAddSuccess] = useState('')
-
 
   const [groupName, setGroupName] = useState('')
   const [groupMemberIds, setGroupMemberIds] = useState<string[]>([])
@@ -733,8 +773,6 @@ function remainingPercentage(): number {
     await fetchActivities(currentUserId)
   }
 
-  const currentUser = users.find((u) => u.id === currentUserId) || null
-
   const filteredGroups = groups.filter((g) =>
     g.name.toLowerCase().includes(groupSearch.toLowerCase()),
   )
@@ -895,10 +933,7 @@ function remainingPercentage(): number {
 
   // Handler for notifications button: fetch unsettled expenses for the current user
   // Notification modal state
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [pendingExpenses, setPendingExpenses] = useState<Expense[]>([]);
-  const [loadingNotifications, setLoadingNotifications] = useState(false);
-  const [notificationError, setNotificationError] = useState('');
+  // Move these hooks to the top level, not inside any conditional
 
   async function handleShowNotifications() {
     if (!currentUserId) {
@@ -984,18 +1019,18 @@ function remainingPercentage(): number {
           position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
           background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
         }}>
-          <div style={{ background: '#E6E6FA', color: '#6A0DAD', padding: 24, borderRadius: 8, minWidth: 320, maxWidth: 400, boxShadow: '0 2px 12px rgba(0,0,0,0.2)' }}>
+          <div className="panel" style={{ minWidth: 320, maxWidth: 400, boxShadow: '0 2px 12px rgba(0,0,0,0.2)' }}>
             <h2>Notifications</h2>
             {loadingNotifications ? (
               <div>Loading...</div>
             ) : notificationError ? (
-              <div style={{ color: 'red' }}>{notificationError}</div>
+              <div className="error-text">{notificationError}</div>
             ) : pendingExpenses.length === 0 ? (
               <div>No unsettled expenses!</div>
             ) : (
-              <ul style={{ maxHeight: 300, overflowY: 'auto', padding: 0, listStyle: 'none' }}>
+              <ul className="card-list" style={{ maxHeight: 300, overflowY: 'auto' }}>
                 {pendingExpenses.map(e => (
-                  <li key={e.id} style={{ marginBottom: 12, borderBottom: '1px solid #eee', paddingBottom: 8 }}>
+                  <li key={e.id} className="card" style={{ marginBottom: 12 }}>
                     <strong>{e.description}</strong><br />
                     Amount: ₹{e.amount} <br />
                     Type: {e.type}
@@ -1003,7 +1038,7 @@ function remainingPercentage(): number {
                 ))}
               </ul>
             )}
-            <button style={{ marginTop: 16 }} onClick={() => setShowNotifications(false)}>Close</button>
+            <button className="icon-btn" style={{ marginTop: 16 }} onClick={() => setShowNotifications(false)}>Close</button>
           </div>
         </div>
       )}
@@ -1316,7 +1351,6 @@ function remainingPercentage(): number {
                       <div className="card-body">
                         <div className="paid-by">Paid by <strong>{payerName(e.payerId)}</strong></div>
                         <div>{shareLabel(e)}{!e.customSplits && ` (${(e.participantIds || []).length} participants)`}</div>
-
                         {owesBreakdown(e).length > 0 && (
                           <div className="breakdown-list" style={{ margin: '6px 0', padding: '4px 0', borderTop: '1px solid #333' }}>
                             <strong style={{ fontSize: '.85rem' }}>Who owes what:</strong>
@@ -1328,7 +1362,6 @@ function remainingPercentage(): number {
                             ))}
                           </div>
                         )}
-
                         {/* Non-payer: you owe */}
                         {e.payerId !== currentUserId && (e.participantIds || []).includes(currentUserId) && (
                           settledExpenses.has(e.id) ? (
@@ -1340,7 +1373,6 @@ function remainingPercentage(): number {
                             </div>
                           )
                         )}
-
                         {/* Payer: others owe you */}
                         {e.payerId === currentUserId && (e.participantIds || []).length > 1 && (
                           settledExpenses.has(e.id) ? (
@@ -1364,6 +1396,31 @@ function remainingPercentage(): number {
                   ))}
                   {sorted.length === 0 && <li className="muted">No expenses in this group yet</li>}
                 </ul>
+
+                {/* Group Chat UI */}
+                <div className="group-chat-panel" style={{ marginTop: '2rem', borderTop: '1px solid #333', paddingTop: '1rem' }}>
+                  <h3>Group Chat</h3>
+                  <div className="group-chat-messages" style={{ maxHeight: 200, overflowY: 'auto', marginBottom: '1rem', background: '#222', padding: '0.5rem', borderRadius: 6 }}>
+                    {(groupChats[groupDetailView] || []).length === 0 && <div className="muted">No messages yet.</div>}
+                    {(groupChats[groupDetailView] || []).map((msg, idx) => (
+                      <div key={idx} style={{ marginBottom: 8 }}>
+                        <span style={{ fontWeight: msg.user === currentUserName ? 'bold' : 'normal', color: msg.user === currentUserName ? '#6cf' : '#fff' }}>{msg.user}:</span> <span>{msg.message}</span>
+                        <div className="muted" style={{ fontSize: '0.7rem' }}>{new Date(msg.timestamp).toLocaleTimeString()}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      type="text"
+                      value={groupChatInputs[groupDetailView] || ''}
+                      onChange={e => setGroupChatInputs(prev => ({ ...prev, [groupDetailView!]: e.target.value }))}
+                      placeholder="Type a message..."
+                      style={{ flex: 1 }}
+                      onKeyDown={e => { if (e.key === 'Enter') handleSendGroupChatMessage(groupDetailView!); }}
+                    />
+                    <button type="button" onClick={() => handleSendGroupChatMessage(groupDetailView!)} disabled={!(groupChatInputs[groupDetailView]?.trim())}>Send</button>
+                  </div>
+                </div>
               </section>
             )
           })()}
