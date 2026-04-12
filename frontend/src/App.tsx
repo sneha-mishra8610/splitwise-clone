@@ -108,19 +108,41 @@ function App() {
   const currentUser: User | null = users.find((u) => u.id === currentUserId) || null;
   const currentUserName = currentUser?.name || 'You';
 
+  // Fetch group chat messages from backend
+  async function fetchGroupChatMessages(groupId: string | null) {
+    if (!groupId) return;
+    try {
+      const res = await authedFetch(`${API_BASE}/chat/${groupId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      // Expecting array of { user, message, timestamp }
+      setGroupChats(prev => ({ ...prev, [groupId]: Array.isArray(data) ? data : [] }));
+    } catch { /* ignore */ }
+  }
+
   // Send message handler for group chat
-  function handleSendGroupChatMessage(groupId: string) {
+  async function handleSendGroupChatMessage(groupId: string) {
     const input = groupChatInputs[groupId]?.trim();
     if (!input) return;
-    setGroupChats(prev => ({
-      ...prev,
-      [groupId]: [
-        ...(prev[groupId] || []),
-        { user: currentUserName, message: input, timestamp: new Date().toISOString() }
-      ]
-    }));
+    try {
+      // Send to backend with senderId (user id, not name)
+      const res = await authedFetch(`${API_BASE}/chat/${groupId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ senderId: currentUserId, message: input })
+      });
+      if (res.ok) {
+        await fetchGroupChatMessages(groupId); // Refresh chat after sending
+      }
+    } catch { /* ignore */ }
     setGroupChatInputs(prev => ({ ...prev, [groupId]: '' }));
   }
+
+  // ...existing code...
+
+  // ...existing code...
+
+  // (Move this useEffect below groupDetailView declaration)
     // ...existing useState hooks...
 
     // Reset all expense form fields to their initial values
@@ -193,6 +215,21 @@ function App() {
   const [activeTab, setActiveTab] = useState<'groups' | 'expenses' | 'friends' | 'activity' | 'account'>('groups')
 
   const [groupDetailView, setGroupDetailView] = useState<string | null>(null)
+
+  // Poll for group chat messages when viewing a group (must be after groupDetailView is declared)
+  useEffect(() => {
+    if (!groupDetailView) return;
+    let stopped = false;
+    async function poll() {
+      await fetchGroupChatMessages(groupDetailView);
+      if (!stopped) {
+        setTimeout(poll, 3000); // Poll every 3 seconds
+      }
+    }
+    poll();
+    return () => { stopped = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupDetailView]);
 
   const [groupSearch, setGroupSearch] = useState('')
   const [friendSearch, setFriendSearch] = useState('')
