@@ -115,8 +115,15 @@ function App() {
       const res = await authedFetch(`${API_BASE}/chat/${groupId}`);
       if (!res.ok) return;
       const data = await res.json();
-      // Expecting array of { user, message, timestamp }
-      setGroupChats(prev => ({ ...prev, [groupId]: Array.isArray(data) ? data : [] }));
+      // Map senderId to user name for display
+      const mapped = Array.isArray(data)
+        ? data.map((msg: any) => ({
+            user: users.find(u => u.id === msg.senderId)?.name || msg.senderId || 'Unknown',
+            message: msg.message,
+            timestamp: msg.timestamp
+          }))
+        : [];
+      setGroupChats(prev => ({ ...prev, [groupId]: mapped }));
     } catch { /* ignore */ }
   }
 
