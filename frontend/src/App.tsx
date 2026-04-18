@@ -1,4 +1,3 @@
-
 import './App.css'
 import React, { useEffect, useState, useCallback } from 'react'
 
@@ -68,6 +67,13 @@ type AuthResponse = {
   token: string
 }
 
+type DashboardSummary = {
+  totalOwedToUser: number
+  totalUserOwes: number
+  netBalance: number
+  spentThisMonth: number
+}
+
 function getCurrencySymbol(currency: string) {
   switch (currency) {
     case 'USD': return '$'
@@ -110,6 +116,10 @@ function App() {
   const currentUser: User | null = users.find((u) => u.id === currentUserId) || null;
   const currentUserName = currentUser?.name || 'You';
   
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null)
+  const [dashboardLoading, setDashboardLoading] = useState(false)
+  const [dashboardError, setDashboardError] = useState('')
+
   async function handleSendExpenseChatMessage(expenseId: string) {
     const input = expenseChatInputs[expenseId]?.trim();
     if (!input) return;
@@ -277,7 +287,7 @@ function App() {
     } catch { return new Set() }
   })
 
-  const [activeTab, setActiveTab] = useState<'groups' | 'expenses' | 'friends' | 'activity' | 'account'>('groups')
+  const [activeTab, setActiveTab] = useState<'Home' | 'Groups' | 'Expenses' | 'Friends' | 'Activity' | 'Account'>('Home')
 
   const [groupDetailView, setGroupDetailView] = useState<string | null>(null)
 
@@ -359,21 +369,21 @@ function App() {
     } catch { /* ignore */ }
   }, [authedFetch, currentUserId])
 
-  async function fetchExpenseEditLogs(expenseId: string) {
-  try {
-    const res = await authedFetch(`${API_BASE}/expense-edit-logs/${expenseId}`);
-    if (res.ok) {
-      const data = await res.json();
-      console.log("Fetched edit logs:", data);
-      setExpenseEditLogs(prev => ({ ...prev, [expenseId]: data }));
-    }
-  } catch { /* ignore */ }
-}
+  const fetchExpenseEditLogs = React.useCallback(async (expenseId: string) => {
+    try {
+      const res = await authedFetch(`${API_BASE}/expense-edit-logs/${expenseId}`);
+      if (res.ok) {
+        const data = await res.json();
+        console.log("Fetched edit logs:", data);
+        setExpenseEditLogs(prev => ({ ...prev, [expenseId]: data }));
+      }
+    } catch { /* ignore */ }
+  }, [authedFetch]);
 React.useEffect(() => {
     if (expenseDetailView) {
       fetchExpenseEditLogs(expenseDetailView.id);
     }
-  }, [expenseDetailView]);
+  }, [expenseDetailView, fetchExpenseEditLogs]);
 
   async function fetchGroups() {
     try {
@@ -463,6 +473,31 @@ React.useEffect(() => {
       if (res.ok) setFriendInvitations(await res.json())
     } catch { /* ignore */ }
   }
+
+  async function fetchDashboardSummary() {
+  if (!currentUserId) return
+  setDashboardLoading(true)
+  setDashboardError('')
+  try {
+    const res = await authedFetch(`${API_BASE}/dashboard/summary/${currentUserId}`)
+    if (res.ok) {
+      setDashboardSummary(await res.json())
+    } else {
+      setDashboardError('Failed to fetch dashboard summary')
+    }
+  } catch {
+    setDashboardError('Could not reach server')
+  } finally {
+    setDashboardLoading(false)
+  }
+}
+
+useEffect(() => {
+  if (activeTab === 'Home' && isAuthenticated && currentUserId) {
+    fetchDashboardSummary()
+  }
+  // eslint-disable-next-line
+}, [activeTab, isAuthenticated, currentUserId])
 
   useEffect(() => {
     if (authToken) {
@@ -1161,7 +1196,7 @@ function remainingPercentage(): number {
         </div>
         <div className="header-center">
           <nav className="tabs">
-            {['groups', 'expenses', 'friends', 'activity', 'account'].map((tab) => (
+            {['Home', 'Groups', 'Expenses', 'Friends', 'Activity', 'Account'].map((tab) => (
               <button
                 key={tab}
                 className={activeTab === tab ? 'tab tab-active' : 'tab'}
@@ -1171,21 +1206,21 @@ function remainingPercentage(): number {
               </button>
             ))}
           </nav>
-          {['groups', 'friends', 'activity'].includes(activeTab) && !groupDetailView && (
+          {['Groups', 'Friends', 'Activity'].includes(activeTab) && !groupDetailView && (
             <input
               type="text"
               className="search-input"
               placeholder={`Search ${activeTab}`}
               value={
-                activeTab === 'groups'
+                activeTab === 'Groups'
                   ? groupSearch
-                  : activeTab === 'friends'
+                  : activeTab === 'Friends'
                   ? friendSearch
                   : activitySearch
               }
               onChange={(e) => {
-                if (activeTab === 'groups') setGroupSearch(e.target.value)
-                else if (activeTab === 'friends') setFriendSearch(e.target.value)
+                if (activeTab === 'Groups') setGroupSearch(e.target.value)
+                else if (activeTab === 'Friends') setFriendSearch(e.target.value)
                 else setActivitySearch(e.target.value)
               }}
             />
@@ -1237,7 +1272,7 @@ function remainingPercentage(): number {
 
       <div className="layout">
         <aside className="sidebar">
-          {activeTab === 'account' && currentUser && (
+          {activeTab === 'Account' && currentUser && (
             <section className="panel">
               <h2>Account</h2>
               <p>
@@ -1258,8 +1293,40 @@ function remainingPercentage(): number {
         </aside>
 
         <main className="main">
+          {/* ── Home/Dashboard tab ── */}
+          {activeTab === 'Home' && currentUser && (
+  <section className="panel" style={{ maxWidth: 400, margin: '2rem auto' }}>
+    <h2>Welcome, {currentUser.name}!</h2>
+    <ul>
+      <li><strong>Groups:</strong> {groups.length}</li>
+      <li><strong>Friends:</strong> {currentUser.friendIds.length}</li>
+      <li><strong>Personal Expenses:</strong> {personalExpenses.length}</li>
+      <li><strong>Group Expenses:</strong> {allGroupExpenses.length}</li>
+    </ul>
+  </section>
+)}
+          {activeTab === 'Home' && (
+  <section className="panel" style={{ maxWidth: 400, margin: '2rem auto' }}>
+    <h2>Dashboard Summary</h2>
+    {dashboardLoading ? (
+      <div>Loading...</div>
+    ) : dashboardError ? (
+      <div className="error-text">{dashboardError}</div>
+    ) : dashboardSummary ? (
+      <ul>
+        <li><strong>Total Owed To You:</strong> ₹{dashboardSummary.totalOwedToUser.toFixed(2)}</li>
+        <li><strong>Total You Owe:</strong> ₹{dashboardSummary.totalUserOwes.toFixed(2)}</li>
+        <li><strong>Net Balance:</strong> ₹{dashboardSummary.netBalance.toFixed(2)}</li>
+        <li><strong>Spent This Month:</strong> ₹{dashboardSummary.spentThisMonth.toFixed(2)}</li>
+      </ul>
+    ) : (
+      <div>No summary available.</div>
+    )}
+  </section>
+)}
+
           {/* ── Friends tab ── */}
-          {activeTab === 'friends' && (
+          {activeTab === 'Friends' && (
             <>
               <section className="panel">
                 <h2>Add Friend</h2>
@@ -1373,7 +1440,7 @@ function remainingPercentage(): number {
           )}
 
           {/* ── Groups tab ── */}
-          {activeTab === 'groups' && !groupDetailView && (
+          {activeTab === 'Groups' && !groupDetailView && (
             <>
               <section className="panel">
                 <h2>Create Group</h2>
@@ -1517,7 +1584,7 @@ function remainingPercentage(): number {
           )}
 
           {/* ── Group Detail View (separate page) ── */}
-          {activeTab === 'groups' && groupDetailView && (() => {
+          {activeTab === 'Groups' && groupDetailView && (() => {
             const grp = groups.find(g => g.id === groupDetailView)
             const sorted = [...groupExpenses].sort((a, b) => {
               const da = a.createdAt ? new Date(a.createdAt).getTime() : 0
@@ -1560,7 +1627,7 @@ function remainingPercentage(): number {
                             <div className="settled-text">✓ Settled up</div>
                           ) : (
                             <div className="owes-row">
-                              <span className="owes-amount">You owe <strong>{getCurrencySymbol(e.currency)}{userShare(e).toFixed(2)}</strong> to {payerName(e.payerId)}</span>
+                              <span className="owes-amount">You owe <strong>{getCurrencySymbol(e.currency)}{userShare(e).toFixed(2)}</strong></span>
                               <button className="settle-btn" onClick={ev => { ev.stopPropagation(); handleSettleUp(e.id) }}>Settle up</button>
                             </div>
                           )
@@ -1618,7 +1685,7 @@ function remainingPercentage(): number {
           })()}
 
           {/* ── Expenses tab ── */}
-          {activeTab === 'expenses' && (
+          {activeTab === 'Expenses' && (
             <div className="expenses-columns">
               <section className="panel">
                 <h3>Recurring Expenses</h3>
@@ -1885,7 +1952,7 @@ function remainingPercentage(): number {
           )}
 
           {/* ── Activity tab ── */}
-          {activeTab === 'activity' && (
+          {activeTab === 'Activity' && (
             <section className="panel">
               <h2>Activity</h2>
               <ul className="list">
@@ -1908,7 +1975,7 @@ function remainingPercentage(): number {
           )}
 
           {/* ── Account tab — daily spending bar chart ── */}
-          {activeTab === 'account' && (() => {
+          {activeTab === 'Account' && (() => {
             const now = new Date()
             const year = now.getFullYear()
             const month = now.getMonth()
