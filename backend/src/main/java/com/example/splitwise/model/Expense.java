@@ -5,7 +5,6 @@ import com.fasterxml.jackson.annotation.JsonAlias;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
-import org.springframework.data.annotation.Id;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
@@ -16,6 +15,11 @@ public class Expense {
     public enum ExpenseType {
         PERSONAL,
         GROUP
+    }
+
+    public enum ExpenseStatus{
+        Settled,
+        Unsettled
     }
 
     @Id
@@ -39,14 +43,31 @@ public class Expense {
     private String recurrenceType;
     private Integer recurrenceInterval;
     private Instant recurrenceEndDate;
-    private List<String> flaggedBy = new ArrayList<>();
+    private List<String> flaggedBy;
+    private ExpenseStatus expenseStatus=ExpenseStatus.Unsettled;
+    private Map<String,Boolean> settledByUser=new HashMap<>();
 
     @JsonProperty("customSplits")
     @Field("customSplits")
     private Map<String,BigDecimal> customSplits;
 
+    public ExpenseStatus getExpenseStatus(){
+        return expenseStatus;
+    }
+
+    public void setExpenseStatus(ExpenseStatus expenseStatus){
+        this.expenseStatus=expenseStatus;
+    }
+
+    public Map<String,Boolean> getSettledByUser(){
+        return settledByUser;
+    }
+
+    public void setSettledByUser(Map<String,Boolean> settledByUser){
+        this.settledByUser=settledByUser;
+    }
+
     public List<String> getFlaggedBy() {
-        if (flaggedBy == null) flaggedBy = new ArrayList<>();
         return flaggedBy;
     }
 

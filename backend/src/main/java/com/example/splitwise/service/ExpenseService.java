@@ -46,6 +46,17 @@ public class ExpenseService {
         validateRecurrence(expense);
         validateCustomSplits(expense);
 
+        if (expense.getSettledByUser() == null) {
+            Map<String, Boolean> settledMap = new HashMap<>();
+            for (String participantId : expense.getParticipantIds()) {
+            if (!participantId.equals(expense.getPayerId())) {
+            settledMap.put(participantId, false);
+            }
+          }
+          expense.setSettledByUser(settledMap);
+        }
+        expense.setExpenseStatus(Expense.ExpenseStatus.Unsettled);
+
         System.out.println("[ExpenseService] Received currency: " + expense.getCurrency());
 
         Expense saved = expenseRepository.save(expense);
@@ -291,43 +302,69 @@ public class ExpenseService {
         }
     }
 
-    public void settleExpense(String expenseId, String settlingUserId) {
-        Expense expense = expenseRepository.findById(expenseId)
-                .orElseThrow(() -> new IllegalArgumentException("Expense not found"));
+public void settleExpense(String expenseId, String settlingUserId) {
+    Expense expense = expenseRepository.findById(expenseId)
+            .orElseThrow(() -> new IllegalArgumentException("Expense not found"));
 
-        if (settlingUserId.equals(expense.getPayerId())) {
-            settleAll(expenseId);
-            return;
-        }
-
-        String payerName = userRepository.findById(expense.getPayerId())
-                .map(u -> u.getName()).orElse("Someone");
-        String settlerName = userRepository.findById(settlingUserId)
-                .map(u -> u.getName()).orElse("Someone");
-        BigDecimal owed = getOwedAmount(expense, settlingUserId);
-
-        if (activityRepository.existsByRelatedExpenseIdAndUserIdAndType(expenseId, settlingUserId, Activity.ActivityType.EXPENSE_SETTLED)) {
-            return;
-        }
-
-        Activity settlerActivity = new Activity();
-        settlerActivity.setUserId(settlingUserId);
-        settlerActivity.setType(Activity.ActivityType.EXPENSE_SETTLED);
-        settlerActivity.setRelatedExpenseId(expenseId);
-        settlerActivity.setDescription("You paid \u20b9" + owed + " to " + payerName + " for \"" + expense.getDescription() + "\".");
-        activityRepository.save(settlerActivity);
-
-        Activity payerActivity = new Activity();
-        payerActivity.setUserId(expense.getPayerId());
-        payerActivity.setType(Activity.ActivityType.EXPENSE_SETTLED);
-        payerActivity.setRelatedExpenseId(expenseId);
-        payerActivity.setDescription("Received \u20b9" + owed + " from " + settlerName + " for \"" + expense.getDescription() + "\".");
-        activityRepository.save(payerActivity);
+    if (settlingUserId.equals(expense.getPayerId())) {
+        settleAll(expenseId);
+        return;
     }
+
+    if (expense.getSettledByUser() != null) {
+        expense.getSettledByUser().put(settlingUserId, true);
+    }
+
+    boolean allSettled = expense.getParticipantIds().stream()
+        .filter(pid -> !pid.equals(expense.getPayerId()))
+        .allMatch(pid -> expense.getSettledByUser() != null && expense.getSettledByUser().getOrDefault(pid, false));
+
+    if (allSettled) {
+        expense.setExpenseStatus(Expense.ExpenseStatus.Settled);
+    } else {
+        expense.setExpenseStatus(Expense.ExpenseStatus.Unsettled);
+    }
+    expenseRepository.save(expense);
+
+    String payerName = userRepository.findById(expense.getPayerId())
+            .map(u -> u.getName()).orElse("Someone");
+    String settlerName = userRepository.findById(settlingUserId)
+            .map(u -> u.getName()).orElse("Someone");
+    BigDecimal owed = getOwedAmount(expense, settlingUserId);
+
+    if (activityRepository.existsByRelatedExpenseIdAndUserIdAndType(expenseId, settlingUserId, Activity.ActivityType.EXPENSE_SETTLED)) {
+        return;
+    }
+
+    Activity settlerActivity = new Activity();
+    settlerActivity.setUserId(settlingUserId);
+    settlerActivity.setType(Activity.ActivityType.EXPENSE_SETTLED);
+    settlerActivity.setRelatedExpenseId(expenseId);
+    settlerActivity.setDescription("You paid \u20b9" + owed + " to " + payerName + " for \"" + expense.getDescription() + "\".");
+    activityRepository.save(settlerActivity);
+
+    Activity payerActivity = new Activity();
+    payerActivity.setUserId(expense.getPayerId());
+    payerActivity.setType(Activity.ActivityType.EXPENSE_SETTLED);
+    payerActivity.setRelatedExpenseId(expenseId);
+    payerActivity.setDescription("Received \u20b9" + owed + " from " + settlerName + " for \"" + expense.getDescription() + "\".");
+    activityRepository.save(payerActivity);
+}
 
     public void settleAll(String expenseId) {
         Expense expense = expenseRepository.findById(expenseId)
                 .orElseThrow(() -> new IllegalArgumentException("Expense not found"));
+
+        if (expense.getSettledByUser() != null) {
+            for (String pid : expense.getParticipantIds()) {
+                if (!pid.equals(expense.getPayerId())) {
+                    expense.getSettledByUser().put(pid, true);
+                }
+            }
+        }
+        expense.setExpenseStatus(Expense.ExpenseStatus.Settled);
+        expenseRepository.save(expense);
+
         String payerName = userRepository.findById(expense.getPayerId())
                 .map(u -> u.getName()).orElse("Someone");
         for (String pid : expense.getParticipantIds()) {

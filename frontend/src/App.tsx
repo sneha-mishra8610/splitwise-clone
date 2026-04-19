@@ -42,6 +42,8 @@ type Expense = {
   generatedFromRecurringId?: string
   recurrenceOccurrenceDate?: string
   flaggedBy?: string[]
+  expenseStatus?: 'Settled' | 'Unsettled'
+  settledByUser?: Record<string, boolean>
 }
 
 type Activity = {
@@ -280,12 +282,6 @@ function App() {
   };
   const [expenseEditLogs, setExpenseEditLogs] = useState<{ [expenseId: string]: ExpenseEditLog[] }>({});
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
-  const [settledExpenses, setSettledExpenses] = useState<Set<string>>(() => {
-    try {
-      const stored = localStorage.getItem('settledExpenses')
-      return stored ? new Set(JSON.parse(stored)) : new Set()
-    } catch { return new Set() }
-  })
 
   const [activeTab, setActiveTab] = useState<'Home' | 'Groups' | 'Expenses' | 'Friends' | 'Activity' | 'Account'>('Home')
 
@@ -993,17 +989,16 @@ function remainingPercentage(): number {
     })
 }
 
-  async function handleSettleUp(expenseId: string) {
-    try {
-      await authedFetch(`${API_BASE}/expenses/${expenseId}/settle?userId=${currentUserId}`, { method: 'POST' })
-    } catch { /* ignore */ }
-    setSettledExpenses((prev) => {
-      const next = new Set(prev).add(expenseId)
-      localStorage.setItem('settledExpenses', JSON.stringify([...next]))
-      return next
-    })
-    await fetchActivities(currentUserId)
-  }
+async function handleSettleUp(expenseId: string) {
+  try {
+    await authedFetch(`${API_BASE}/expenses/${expenseId}/settle?userId=${currentUserId}`, { method: 'POST' });
+  } catch { /* ignore */ }
+  await fetchActivities(currentUserId);
+  if (selectedGroupId) await fetchGroupExpenses(selectedGroupId);
+  await fetchPersonalExpenses(currentUserId);
+  await fetchAllGroupExpenses();
+  await fetchDashboardSummary();
+}
 
   const filteredGroups = groups.filter((g) =>
     g.name.toLowerCase().includes(groupSearch.toLowerCase()),
@@ -1623,26 +1618,25 @@ function remainingPercentage(): number {
                         )}
                         {/* Non-payer: you owe */}
                         {e.payerId !== currentUserId && (e.participantIds || []).includes(currentUserId) && (
-                          settledExpenses.has(e.id) ? (
-                            <div className="settled-text">✓ Settled up</div>
-                          ) : (
-                            <div className="owes-row">
-                              <span className="owes-amount">You owe <strong>{getCurrencySymbol(e.currency)}{userShare(e).toFixed(2)}</strong></span>
-                              <button className="settle-btn" onClick={ev => { ev.stopPropagation(); handleSettleUp(e.id) }}>Settle up</button>
-                            </div>
-                          )
-                        )}
+  e.settledByUser?.[currentUserId] ? (
+    <div className="settled-text">✓ Settled up</div>
+  ) : (
+    <div className="owes-row">
+      <span className="owes-amount">You owe <strong>{getCurrencySymbol(e.currency)}{userShare(e).toFixed(2)}</strong></span>
+      <button className="settle-btn" onClick={ev => { ev.stopPropagation(); handleSettleUp(e.id) }}>Settle up</button>
+    </div>
+  )
+)}
                         {/* Payer: others owe you */}
                         {e.payerId === currentUserId && (e.participantIds || []).length > 1 && (
-                          settledExpenses.has(e.id) ? (
-                            <div className="settled-text">✓ All settled</div>
-                          ) : (
-                            <div className="owes-row">
-                              <span className="you-paid-info">Others owe you <strong>{getCurrencySymbol(e.currency)}{othersOweTotal(e).toFixed(2)}</strong></span>
-                              <button className="settle-btn" onClick={ev => { ev.stopPropagation(); handleSettleUp(e.id) }}>Settle up</button>
-                            </div>
-                          )
-                        )}
+  e.expenseStatus === 'Settled' ? (
+    <div className="settled-text">✓ All settled</div>
+  ) : (
+    <div className="owes-row">
+      <span className="you-paid-info">Others owe you <strong>{getCurrencySymbol(e.currency)}{othersOweTotal(e).toFixed(2)}</strong></span>
+    </div>
+  )
+)}
                         {e.imageUrl && <a href={e.imageUrl} target="_blank" rel="noreferrer">View bill</a>}
                       </div>
                       <div className="card-actions">
@@ -1807,27 +1801,27 @@ function remainingPercentage(): number {
                             <div className="paid-by">Paid by <strong>{payerName(e.payerId)}</strong></div>
                             <div>{shareLabel(e)}</div>
 
-                            {e.payerId !== currentUserId && (e.participantIds || []).includes(currentUserId) && (
-                              settledExpenses.has(e.id) ? (
-                                <div className="settled-text">✓ Settled up</div>
-                              ) : (
-                                <div className="owes-row">
-                                  <span className="owes-amount">You owe <strong>{getCurrencySymbol(e.currency)}{userShare(e).toFixed(2)}</strong></span>
-                                  <button className="settle-btn" onClick={ev => { ev.stopPropagation(); handleSettleUp(e.id) }}>Settle up</button>
-                                </div>
-                              )
-                            )}
-
                             {e.payerId === currentUserId && (e.participantIds || []).length > 1 && (
-                              settledExpenses.has(e.id) ? (
+                             e.expenseStatus === 'Settled' ? (
                                 <div className="settled-text">✓ All settled</div>
-                              ) : (
+                             ) : (
                                 <div className="owes-row">
                                   <span className="you-paid-info">Others owe you <strong>{getCurrencySymbol(e.currency)}{othersOweTotal(e).toFixed(2)}</strong></span>
-                                  <button className="settle-btn" onClick={ev => { ev.stopPropagation(); handleSettleUp(e.id) }}>Settle up</button>
                                 </div>
-                              )
+                            )
                             )}
+
+                            {e.payerId !== currentUserId && (e.participantIds || []).includes(currentUserId) && (
+                              e.settledByUser?.[currentUserId] ? (
+                              <div className="settled-text">✓ Settled up</div>
+                            ) : (
+                              <div className="owes-row">
+                              <span className="owes-amount">You owe <strong>{getCurrencySymbol(e.currency)}{userShare(e).toFixed(2)}</strong></span>
+                             <button className="settle-btn" onClick={ev => { ev.stopPropagation(); handleSettleUp(e.id) }}>Settle up</button>
+                             </div>
+                            )
+                          )} 
+
                             {e.imageUrl && <a href={e.imageUrl} target="_blank" rel="noreferrer">View bill</a>}
                           </div>
                           <div className="card-actions">

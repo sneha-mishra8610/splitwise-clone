@@ -33,7 +33,7 @@ public class DashboardService {
 				for (var entry : expense.getCustomSplits().entrySet()) {
 					String participantId = entry.getKey();
 					BigDecimal share = entry.getValue();
-					if (!participantId.equals(userId)) {
+					if (expense.getSettledByUser() == null || !expense.getSettledByUser().getOrDefault(participantId, false)) {
 						total = total.add(share);
 					}
 				}
@@ -41,9 +41,13 @@ public class DashboardService {
 				int numParticipants = expense.getParticipantIds().size();
 				if (numParticipants > 1) {
 					BigDecimal share = expense.getAmount().divide(BigDecimal.valueOf(numParticipants), BigDecimal.ROUND_HALF_UP);
-					int numberOfPeopleWhoOwe=numParticipants-1;
-                    BigDecimal amountOwed=share.multiply(BigDecimal.valueOf(numberOfPeopleWhoOwe));
-                    total.add(amountOwed);
+					for (String participantId : expense.getParticipantIds()) {
+						if (!participantId.equals(userId)) {
+							if (expense.getSettledByUser() == null || !expense.getSettledByUser().getOrDefault(participantId, false)) {
+								total = total.add(share);
+							}
+						}
+					}
 				}
 			}
 		}
@@ -53,23 +57,24 @@ public class DashboardService {
 	private BigDecimal getTotalUserOwes(String userId) {
 		BigDecimal total = BigDecimal.ZERO;
 		var expenses = expenseRepository.findByParticipantIdsContaining(userId);
-        for(var expense:expenses){
-            if(expense.getPayerId().equals(userId))
-                continue;
-            if(expense.getCustomSplits()!=null){
-                for(var entry:expense.getCustomSplits().entrySet()){
-                    String participantId=entry.getKey();
-                    BigDecimal share=entry.getValue();
-                    if(participantId==userId)
-                        total=total.add(share);
-                }
-            }
-            else if(expense.getParticipantIds()!=null){
-                int numParticipants=expense.getParticipantIds().size();
-                BigDecimal share=expense.getAmount().divide(BigDecimal.valueOf(numParticipants),BigDecimal.ROUND_HALF_EVEN);
-                total=total.add(share);
-            }
-        }
+		for (var expense : expenses) {
+			if (expense.getPayerId().equals(userId))
+				continue;
+			boolean isSettled = expense.getSettledByUser() != null && expense.getSettledByUser().getOrDefault(userId, false);
+			if (isSettled) continue;
+			if (expense.getCustomSplits() != null) {
+				for (var entry : expense.getCustomSplits().entrySet()) {
+					String participantId = entry.getKey();
+					BigDecimal share = entry.getValue();
+					if (participantId.equals(userId))
+						total = total.add(share);
+				}
+			} else if (expense.getParticipantIds() != null) {
+				int numParticipants = expense.getParticipantIds().size();
+				BigDecimal share = expense.getAmount().divide(BigDecimal.valueOf(numParticipants), BigDecimal.ROUND_HALF_EVEN);
+				total = total.add(share);
+			}
+		}
 		return total;
 	}
 
