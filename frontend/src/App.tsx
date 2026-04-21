@@ -52,6 +52,9 @@ type Activity = {
   createdAt: string
 }
 
+type ActivityFilter = 'ALL' | 'EXPENSE' | 'SETTLEMENT' | 'GROUP' | 'FRIEND'
+type ActivitySortOrder = 'NEWEST' | 'OLDEST'
+
 type PendingInvitation = {
   id: string
   inviterUserId: string
@@ -84,6 +87,72 @@ function getCurrencySymbol(currency: string) {
     case 'JPY': return '¥'
     case 'INR': return '₹'
     default: return currency
+  }
+}
+
+function getSidebarIcon(tab: 'Home' | 'Groups' | 'Expenses' | 'Friends' | 'Activity' | 'Account') {
+  const commonProps = {
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.9,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    className: 'sidebar-icon-svg',
+    'aria-hidden': true,
+  }
+
+  switch (tab) {
+    case 'Home':
+      return (
+        <svg {...commonProps}>
+          <path d="M3 10.5 12 4l9 6.5" />
+          <path d="M5.5 9.5V20h13V9.5" />
+        </svg>
+      )
+    case 'Groups':
+      return (
+        <svg {...commonProps}>
+          <circle cx="8" cy="9" r="2.5" />
+          <circle cx="16.5" cy="8" r="2" />
+          <path d="M4.5 18c.7-2.3 2.5-3.5 5-3.5s4.3 1.2 5 3.5" />
+          <path d="M13.5 17c.4-1.6 1.7-2.5 3.5-2.5 1.3 0 2.3.4 3 .9" />
+        </svg>
+      )
+    case 'Expenses':
+      return (
+        <svg {...commonProps}>
+          <rect x="5" y="4.5" width="14" height="15" rx="2.5" />
+          <path d="M8.5 9h7" />
+          <path d="M8.5 13h7" />
+          <path d="M8.5 17h4" />
+        </svg>
+      )
+    case 'Friends':
+      return (
+        <svg {...commonProps}>
+          <circle cx="9" cy="9" r="2.5" />
+          <circle cx="16.5" cy="10" r="2.2" />
+          <path d="M4.5 18c.8-2.4 2.7-3.7 5.2-3.7 2.4 0 4.2 1.2 5.1 3.3" />
+          <path d="M14.2 17.4c.6-1.4 1.7-2.1 3.3-2.1 1.1 0 2 .2 2.8.8" />
+        </svg>
+      )
+    case 'Activity':
+      return (
+        <svg {...commonProps}>
+          <circle cx="12" cy="12" r="8" />
+          <path d="M12 7.8v4.7l3 1.9" />
+        </svg>
+      )
+    case 'Account':
+      return (
+        <svg {...commonProps}>
+          <circle cx="12" cy="8.5" r="3" />
+          <path d="M6 19c1.1-2.8 3.2-4.2 6-4.2s4.9 1.4 6 4.2" />
+        </svg>
+      )
+    default:
+      return null
   }
 }
 
@@ -248,6 +317,7 @@ function App() {
 
   const [groupName, setGroupName] = useState('')
   const [groupMemberIds, setGroupMemberIds] = useState<string[]>([])
+  const [showCreateGroupPanel, setShowCreateGroupPanel] = useState(false)
 
   const [expenseDescription, setExpenseDescription] = useState('')
   const [expenseAmount, setExpenseAmount] = useState('')
@@ -274,6 +344,7 @@ function App() {
   };
   const [expenseEditLogs, setExpenseEditLogs] = useState<{ [expenseId: string]: ExpenseEditLog[] }>({});
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
+  const [expenseViewFilter, setExpenseViewFilter] = useState<'ALL' | 'PERSONAL' | 'GROUP' | 'RECURRING' | 'FLAGGED'>('ALL')
 
   const [activeTab, setActiveTab] = useState<'Home' | 'Groups' | 'Expenses' | 'Friends' | 'Activity' | 'Account'>('Home')
 
@@ -314,6 +385,8 @@ function App() {
   const [groupSearch, setGroupSearch] = useState('')
   const [friendSearch, setFriendSearch] = useState('')
   const [activitySearch, setActivitySearch] = useState('')
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>('ALL')
+  const [activitySortOrder, setActivitySortOrder] = useState<ActivitySortOrder>('NEWEST')
 
   const [editingFriend, setEditingFriend] = useState<User | null>(null)
   const [editFriendName, setEditFriendName] = useState('')
@@ -1010,12 +1083,89 @@ async function handleSettleUp(expenseId: string) {
   await fetchFriendBalances();
 }
 
+  function getActivityCategory(activity: Activity): Exclude<ActivityFilter, 'ALL'> {
+    const description = activity.description.toLowerCase()
+    if (description.includes('settle') || description.includes('you owe') || description.includes('owes you')) {
+      return 'SETTLEMENT'
+    }
+    if (description.includes('group')) {
+      return 'GROUP'
+    }
+    if (description.includes('friend')) {
+      return 'FRIEND'
+    }
+    return 'EXPENSE'
+  }
+
+  function getActivityTone(activity: Activity): 'positive' | 'negative' | 'neutral' {
+    const description = activity.description.toLowerCase()
+    if (description.includes('owes you') || description.includes('received') || description.includes('added')) {
+      return 'positive'
+    }
+    if (description.includes('you owe') || description.includes('removed') || description.includes('deleted')) {
+      return 'negative'
+    }
+    return 'neutral'
+  }
+
+  function getActivityBadge(activity: Activity): string {
+    const category = getActivityCategory(activity)
+    switch (category) {
+      case 'SETTLEMENT':
+        return 'ST'
+      case 'GROUP':
+        return 'GR'
+      case 'FRIEND':
+        return 'FR'
+      case 'EXPENSE':
+      default:
+        return 'EX'
+    }
+  }
+
   const filteredGroups = groups.filter((g) =>
     g.name.toLowerCase().includes(groupSearch.toLowerCase()),
   )
-  const filteredActivities = activities.filter((a) =>
-    a.description.toLowerCase().includes(activitySearch.toLowerCase()),
-  )
+
+  const filteredActivities = activities
+    .filter((activity) => activity.description.toLowerCase().includes(activitySearch.toLowerCase()))
+    .filter((activity) => activityFilter === 'ALL' || getActivityCategory(activity) === activityFilter)
+    .sort((a, b) => {
+      const diff = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      return activitySortOrder === 'NEWEST' ? diff : -diff
+    })
+
+  const activityFilterTabs: { key: ActivityFilter; label: string; count: number }[] = [
+    { key: 'ALL', label: 'All', count: activities.length },
+    { key: 'EXPENSE', label: 'Expenses', count: activities.filter((activity) => getActivityCategory(activity) === 'EXPENSE').length },
+    { key: 'SETTLEMENT', label: 'Settlements', count: activities.filter((activity) => getActivityCategory(activity) === 'SETTLEMENT').length },
+    { key: 'GROUP', label: 'Groups', count: activities.filter((activity) => getActivityCategory(activity) === 'GROUP').length },
+    { key: 'FRIEND', label: 'Friends', count: activities.filter((activity) => getActivityCategory(activity) === 'FRIEND').length },
+  ]
+
+  const activityGroups = filteredActivities.reduce<Array<{ key: string; label: string; items: Activity[] }>>((groupsAcc, activity) => {
+    const date = new Date(activity.createdAt)
+    const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+    const label = new Intl.DateTimeFormat('en-IN', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    }).format(date)
+    const existing = groupsAcc.find((group) => group.key === key)
+    if (existing) {
+      existing.items.push(activity)
+      return groupsAcc
+    }
+    groupsAcc.push({ key, label, items: [activity] })
+    return groupsAcc
+  }, [])
+
+  const activityStats = {
+    total: activities.length,
+    visible: filteredActivities.length,
+    settlements: activities.filter((activity) => getActivityCategory(activity) === 'SETTLEMENT').length,
+    expenses: activities.filter((activity) => getActivityCategory(activity) === 'EXPENSE').length,
+  }
 
   const currentFriends: User[] = currentUser
     ? currentUser.friendIds
@@ -1025,6 +1175,107 @@ async function handleSettleUp(expenseId: string) {
         .sort((a, b) => a.name.localeCompare(b.name))
     : []
 
+  const dashboardFriendBalances = currentFriends
+    .map((friend) => ({
+      ...friend,
+      balance: Number(friendBalances[friend.id] ?? 0),
+    }))
+    .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
+
+  const dashboardActionFriends = dashboardFriendBalances.filter((friend) => friend.balance < 0)
+  const recentDashboardActivities = [...activities].slice(0, 4)
+
+  const greeting = (() => {
+    const hour = new Date().getHours()
+    if (hour < 12) return 'Good morning'
+    if (hour < 17) return 'Good afternoon'
+    return 'Good evening'
+  })()
+
+  const dashboardDateLabel = new Intl.DateTimeFormat('en-IN', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date())
+
+  const dashboardExpensePool: Expense[] = (() => {
+    const seen = new Set<string>()
+    const merged: Expense[] = []
+    ;[...personalExpenses, ...allGroupExpenses].forEach((expense) => {
+      if (!seen.has(expense.id)) {
+        seen.add(expense.id)
+        merged.push(expense)
+      }
+    })
+    return merged
+  })()
+
+  const monthlyTrend = (() => {
+    const now = new Date()
+    const buckets = Array.from({ length: 6 }, (_, idx) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - (5 - idx), 1)
+      return {
+        key: `${date.getFullYear()}-${date.getMonth()}`,
+        label: date.toLocaleString('default', { month: 'short' }),
+        total: 0,
+      }
+    })
+
+    dashboardExpensePool.forEach((expense) => {
+      if (!expense.createdAt) return
+      const expenseDate = new Date(expense.createdAt)
+      const key = `${expenseDate.getFullYear()}-${expenseDate.getMonth()}`
+      const bucket = buckets.find((entry) => entry.key === key)
+      if (!bucket) return
+
+      if (expense.type === 'GROUP' && (expense.participantIds || []).includes(currentUserId)) {
+        bucket.total += userShare(expense)
+      } else if (expense.type === 'PERSONAL' && expense.payerId === currentUserId) {
+        bucket.total += expense.amount
+      }
+    })
+
+    const max = Math.max(...buckets.map((item) => item.total), 1)
+    return { buckets, max }
+  })()
+
+
+  const expenseMix = (() => {
+    let personal = 0
+    let group = 0
+
+    dashboardExpensePool.forEach((expense) => {
+      if (expense.type === 'GROUP' && (expense.participantIds || []).includes(currentUserId)) {
+        group += userShare(expense)
+      } else if (expense.type === 'PERSONAL' && expense.payerId === currentUserId) {
+        personal += expense.amount
+      }
+    })
+
+    const total = personal + group
+    const personalPct = total > 0 ? (personal / total) * 100 : 50
+    const groupPct = total > 0 ? (group / total) * 100 : 50
+
+    return {
+      personal,
+      group,
+      total,
+      personalPct,
+      groupPct,
+    }
+  })()
+
+  function formatRelativeTime(iso?: string) {
+    if (!iso) return ''
+    const diffMs = Date.now() - new Date(iso).getTime()
+    const diffMin = Math.max(1, Math.floor(diffMs / 60000))
+    if (diffMin < 60) return `${diffMin} min ago`
+    const diffHours = Math.floor(diffMin / 60)
+    if (diffHours < 24) return `${diffHours} hr ago`
+    const diffDays = Math.floor(diffHours / 24)
+    return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`
+  }
+
   const recurringTemplates: Expense[] = [...personalExpenses, ...allGroupExpenses]
     .filter((e) => e.isRecurring || e.recurring)
     .filter((e, idx, arr) => arr.findIndex((x) => x.id === e.id) === idx)
@@ -1033,6 +1284,55 @@ async function handleSettleUp(expenseId: string) {
       const db = b.createdAt ? new Date(b.createdAt).getTime() : 0
       return db - da
     })
+
+  const expenseWorkspacePool: Expense[] = [...personalExpenses, ...allGroupExpenses]
+    .filter((e, idx, arr) => arr.findIndex((x) => x.id === e.id) === idx)
+    .sort((a, b) => {
+      const da = a.createdAt ? new Date(a.createdAt).getTime() : 0
+      const db = b.createdAt ? new Date(b.createdAt).getTime() : 0
+      return db - da
+    })
+
+  const flaggedExpenses = expenseWorkspacePool.filter((expense) => (expense.flaggedBy?.length || 0) > 0)
+  const nonRecurringExpenses = expenseWorkspacePool.filter((expense) => !(expense.isRecurring || expense.recurring))
+
+  const expenseStats = {
+    totalLogged: expenseWorkspacePool.reduce((sum, expense) => sum + expense.amount, 0),
+    youOwe: dashboardSummary?.totalUserOwes ?? 0,
+    owedToYou: dashboardSummary?.totalOwedToUser ?? 0,
+    recurringCount: recurringTemplates.length,
+    flaggedCount: flaggedExpenses.length,
+    expenseCount: expenseWorkspacePool.length,
+  }
+
+  const expenseFilterTabs: { key: typeof expenseViewFilter; label: string; count: number }[] = [
+    { key: 'ALL', label: 'All', count: nonRecurringExpenses.length },
+    { key: 'PERSONAL', label: 'Personal', count: nonRecurringExpenses.filter((expense) => expense.type === 'PERSONAL').length },
+    { key: 'GROUP', label: 'Group', count: nonRecurringExpenses.filter((expense) => expense.type === 'GROUP').length },
+    { key: 'RECURRING', label: 'Recurring', count: recurringTemplates.length },
+    { key: 'FLAGGED', label: 'Flagged', count: flaggedExpenses.length },
+  ]
+
+  const filteredExpenseFeed = expenseWorkspacePool.filter((expense) => {
+    switch (expenseViewFilter) {
+      case 'PERSONAL':
+        return expense.type === 'PERSONAL' && !(expense.isRecurring || expense.recurring)
+      case 'GROUP':
+        return expense.type === 'GROUP' && !(expense.isRecurring || expense.recurring)
+      case 'RECURRING':
+        return !!(expense.isRecurring || expense.recurring)
+      case 'FLAGGED':
+        return (expense.flaggedBy?.length || 0) > 0
+      case 'ALL':
+      default:
+        return !(expense.isRecurring || expense.recurring)
+    }
+  })
+
+  const expensePageTitle = (() => {
+    const activeFilter = expenseFilterTabs.find((tab) => tab.key === expenseViewFilter)
+    return activeFilter ? `${activeFilter.label} expenses` : 'Expenses'
+  })()
 
   if (!isAuthenticated) {
     return (
@@ -1165,6 +1465,32 @@ async function handleSettleUp(expenseId: string) {
   }
 
   const sortedGroups = [...filteredGroups].sort((a, b) => a.name.localeCompare(b.name))
+  const groupOverview = sortedGroups.map((group) => {
+    const expenses = allGroupExpenses.filter((expense) => expense.groupId === group.id)
+    const total = expenses.reduce((sum, expense) => sum + expense.amount, 0)
+    const yourShare = expenses.reduce((sum, expense) => {
+      if ((expense.participantIds || []).includes(currentUserId)) {
+        return sum + userShare(expense)
+      }
+      return sum
+    }, 0)
+    const unsettledCount = expenses.filter((expense) => expense.expenseStatus !== 'Settled').length
+    const latestExpense = [...expenses].sort((a, b) => {
+      const da = a.createdAt ? new Date(a.createdAt).getTime() : 0
+      const db = b.createdAt ? new Date(b.createdAt).getTime() : 0
+      return db - da
+    })[0]
+
+    return {
+      group,
+      total,
+      yourShare,
+      unsettledCount,
+      latestLabel: latestExpense?.createdAt
+        ? new Date(latestExpense.createdAt).toLocaleString('default', { month: 'short', year: 'numeric' })
+        : 'No activity yet',
+    }
+  })
 
   async function handleShowNotifications() {
     if (!currentUserId) {
@@ -1200,17 +1526,6 @@ async function handleSettleUp(expenseId: string) {
           <h1 style={{ margin: 0 }}>Splitwise</h1>
         </div>
         <div className="header-center">
-          <nav className="tabs">
-            {['Home', 'Groups', 'Expenses', 'Friends', 'Activity', 'Account'].map((tab) => (
-              <button
-                key={tab}
-                className={activeTab === tab ? 'tab tab-active' : 'tab'}
-                onClick={() => { setActiveTab(tab as typeof activeTab); setGroupDetailView(null) }}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </button>
-            ))}
-          </nav>
           {['Groups', 'Friends', 'Activity'].includes(activeTab) && !groupDetailView && (
             <input
               type="text"
@@ -1277,6 +1592,21 @@ async function handleSettleUp(expenseId: string) {
 
       <div className="layout">
         <aside className="sidebar">
+          <section className="panel sidebar-nav-panel">
+            <p className="sidebar-nav-label">Navigation</p>
+            <nav className="sidebar-tabs">
+              {['Home', 'Groups', 'Expenses', 'Friends', 'Activity', 'Account'].map((tab) => (
+                <button
+                  key={tab}
+                  className={activeTab === tab ? 'sidebar-tab sidebar-tab-active' : 'sidebar-tab'}
+                  onClick={() => { setActiveTab(tab as typeof activeTab); setGroupDetailView(null) }}
+                >
+                  <span className="sidebar-tab-icon" aria-hidden="true">{getSidebarIcon(tab as typeof activeTab)}</span>
+                  <span>{tab.charAt(0).toUpperCase() + tab.slice(1)}</span>
+                </button>
+              ))}
+            </nav>
+          </section>
           {activeTab === 'Account' && currentUser && (
             <section className="panel">
               <h2>Account</h2>
@@ -1299,7 +1629,7 @@ async function handleSettleUp(expenseId: string) {
 
         <main className="main">
           {/* ── Home/Dashboard tab ── */}
-          {activeTab === 'Home' && currentUser && (
+          {false && activeTab === 'Home' && currentUser && (() => { const currentUser = {} as User; return (
   <section className="panel" style={{ maxWidth: 400, margin: '2rem auto' }}>
     <h2>Welcome, {currentUser.name}!</h2>
     <ul>
@@ -1309,8 +1639,8 @@ async function handleSettleUp(expenseId: string) {
       <li><strong>Group Expenses:</strong> {allGroupExpenses.length}</li>
     </ul>
   </section>
-)}
-          {activeTab === 'Home' && (
+          )})()}
+          {false && activeTab === 'Home' && (() => { const dashboardSummary = {} as DashboardSummary; return (
   <section className="panel" style={{ maxWidth: 400, margin: '2rem auto' }}>
     <h2>Dashboard Summary</h2>
     {dashboardLoading ? (
@@ -1328,10 +1658,356 @@ async function handleSettleUp(expenseId: string) {
       <div>No summary available.</div>
     )}
   </section>
-)}
+          )})()}
 
           {/* ── Friends tab ── */}
+          {activeTab === 'Home' && currentUser && (
+            <section className="dashboard-shell">
+              <div className="dashboard-hero panel">
+                <div>
+                  <p className="dashboard-breadcrumb">Splitwise / Dashboard</p>
+                  <h2>{greeting}, {currentUser.name}</h2>
+                  <p className="dashboard-subtitle">{dashboardDateLabel} - here is your financial snapshot</p>
+                </div>
+                <div className="dashboard-range">
+                  <button className="range-pill range-pill-active" type="button">This month</button>
+                  <button className="range-pill" type="button">Quarter</button>
+                  <button className="range-pill" type="button">Year</button>
+                </div>
+              </div>
+
+              {dashboardLoading ? (
+                <section className="panel">
+                  <div>Loading dashboard...</div>
+                </section>
+              ) : dashboardError ? (
+                <section className="panel">
+                  <div className="error-text">{dashboardError}</div>
+                </section>
+              ) : dashboardSummary ? (
+                <>
+                  <div className="dashboard-stats">
+                    <article className="panel dashboard-stat-card">
+                      <span className="dashboard-stat-label">You owe</span>
+                      <strong className="dashboard-stat-value negative">{getCurrencySymbol('INR')}{dashboardSummary.totalUserOwes.toFixed(2)}</strong>
+                      <span className="dashboard-stat-note">{dashboardActionFriends.length} friend{dashboardActionFriends.length === 1 ? '' : 's'} need settlement</span>
+                    </article>
+                    <article className="panel dashboard-stat-card">
+                      <span className="dashboard-stat-label">Owed to you</span>
+                      <strong className="dashboard-stat-value positive">{getCurrencySymbol('INR')}{dashboardSummary.totalOwedToUser.toFixed(2)}</strong>
+                      <span className="dashboard-stat-note">{dashboardFriendBalances.filter((friend) => friend.balance > 0).length} incoming balance{dashboardFriendBalances.filter((friend) => friend.balance > 0).length === 1 ? '' : 's'}</span>
+                    </article>
+                    <article className="panel dashboard-stat-card">
+                      <span className="dashboard-stat-label">Total spent</span>
+                      <strong className="dashboard-stat-value">{getCurrencySymbol('INR')}{dashboardSummary.spentThisMonth.toFixed(2)}</strong>
+                      <span className="dashboard-stat-note">{groups.length} groups, {currentFriends.length} friends</span>
+                    </article>
+                    <article className="panel dashboard-stat-card">
+                      <span className="dashboard-stat-label">Net balance</span>
+                      <strong className={`dashboard-stat-value ${dashboardSummary.netBalance >= 0 ? 'positive' : 'negative'}`}>
+                        {dashboardSummary.netBalance >= 0 ? '+' : '-'}{getCurrencySymbol('INR')}{Math.abs(dashboardSummary.netBalance).toFixed(2)}
+                      </strong>
+                      <span className="dashboard-stat-note">
+                        {dashboardSummary.netBalance >= 0 ? 'You are in the green' : 'You owe more than you are owed'}
+                      </span>
+                    </article>
+                  </div>
+
+                  <div className="dashboard-main-grid">
+                    <article className="panel dashboard-trend-panel">
+                      <div className="dashboard-panel-head">
+                        <h3>Spending trend</h3>
+                        <span className="muted">Last 6 months</span>
+                      </div>
+                      <div className="dashboard-trend-chart">
+                        {monthlyTrend.buckets.map((bucket) => (
+                          <div key={bucket.key} className="dashboard-trend-col">
+                            <div
+                              className="dashboard-trend-bar"
+                              style={{ height: `${Math.max((bucket.total / monthlyTrend.max) * 100, bucket.total > 0 ? 8 : 0)}%` }}
+                              title={`${bucket.label}: ${getCurrencySymbol('INR')}${bucket.total.toFixed(2)}`}
+                            />
+                            <span>{bucket.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+
+                    <article className="panel dashboard-mix-panel">
+                      <div className="dashboard-panel-head">
+                        <h3>Expense mix</h3>
+                        <span className="muted">Personal vs shared</span>
+                      </div>
+                      <div className="dashboard-mix-layout">
+                        <div
+                          className="dashboard-donut"
+                          style={{
+                            background: `conic-gradient(#6c5ce7 0 ${expenseMix.personalPct}%, #8be0cb ${expenseMix.personalPct}% 100%)`,
+                          }}
+                        >
+                          <div className="dashboard-donut-hole">
+                            <strong>{expenseMix.total > 0 ? `${Math.round(expenseMix.personalPct)}%` : '0%'}</strong>
+                            <span>Personal</span>
+                          </div>
+                        </div>
+                        <div className="dashboard-legend">
+                          <div className="dashboard-legend-row">
+                            <span className="dashboard-legend-dot personal-dot" />
+                            <span>Personal</span>
+                            <strong>{getCurrencySymbol('INR')}{expenseMix.personal.toFixed(2)}</strong>
+                          </div>
+                          <div className="dashboard-legend-row">
+                            <span className="dashboard-legend-dot group-dot" />
+                            <span>Group share</span>
+                            <strong>{getCurrencySymbol('INR')}{expenseMix.group.toFixed(2)}</strong>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  </div>
+
+                  <div className="dashboard-bottom-grid">
+                    <article className="panel dashboard-list-panel">
+                      <div className="dashboard-panel-head">
+                        <h3>Friend balances</h3>
+                        <span className="muted">Top relationships</span>
+                      </div>
+                      <div className="dashboard-balance-list">
+                        {dashboardFriendBalances.slice(0, 4).map((friend) => (
+                          <div key={friend.id} className="dashboard-balance-row">
+                            <div className="dashboard-avatar">{friend.name.slice(0, 2).toUpperCase()}</div>
+                            <div className="dashboard-balance-meta">
+                              <strong>{friend.name}</strong>
+                              <span className={friend.balance > 0 ? 'positive' : friend.balance < 0 ? 'negative' : 'muted'}>
+                                {friend.balance > 0
+                                  ? `owes you ${getCurrencySymbol('INR')}${friend.balance.toFixed(2)}`
+                                  : friend.balance < 0
+                                  ? `you owe ${getCurrencySymbol('INR')}${Math.abs(friend.balance).toFixed(2)}`
+                                  : 'settled'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                        {dashboardFriendBalances.length === 0 && <div className="muted">No friend balances yet.</div>}
+                      </div>
+                    </article>
+
+                    <article className="panel dashboard-list-panel">
+                      <div className="dashboard-panel-head">
+                        <h3>Action required</h3>
+                        <span className="muted">Pending settlements</span>
+                      </div>
+                      <div className="dashboard-action-list">
+                        {dashboardActionFriends.slice(0, 4).map((friend) => (
+                          <div key={friend.id} className="dashboard-action-row">
+                            <div>
+                              <strong>Settle with {friend.name}</strong>
+                              <div className="muted">Outstanding balance is still open</div>
+                            </div>
+                            <button
+                              className="settle-btn"
+                              onClick={async () => {
+                                await authedFetch(`${API_BASE}/expenses/settle-with-friend?userId=${currentUserId}&friendId=${friend.id}`, { method: 'POST' })
+                                await fetchFriendBalances()
+                                await fetchDashboardSummary()
+                                await fetchActivities(currentUserId)
+                              }}
+                            >
+                              Settle
+                            </button>
+                          </div>
+                        ))}
+                        {dashboardActionFriends.length === 0 && <div className="muted">No action needed right now.</div>}
+                      </div>
+                    </article>
+
+                    <article className="panel dashboard-list-panel">
+                      <div className="dashboard-panel-head">
+                        <h3>Recent activity</h3>
+                        <span className="muted">Latest updates</span>
+                      </div>
+                      <div className="dashboard-activity-list">
+                        {recentDashboardActivities.map((activity) => (
+                          <div key={activity.id} className="dashboard-activity-row">
+                            <span className="dashboard-activity-dot" />
+                            <div>
+                              <strong>{activity.description}</strong>
+                              <div className="muted">{formatRelativeTime(activity.createdAt)}</div>
+                            </div>
+                          </div>
+                        ))}
+                        {recentDashboardActivities.length === 0 && <div className="muted">No activity yet.</div>}
+                      </div>
+                    </article>
+                  </div>
+                </>
+              ) : (
+                <section className="panel">
+                  <div>No summary available.</div>
+                </section>
+              )}
+            </section>
+          )}
+
           {activeTab === 'Friends' && (
+            <>
+              <section className="friends-shell">
+                <div className="friends-hero panel">
+                  <div>
+                    <p className="dashboard-breadcrumb">Splitwise / Friends</p>
+                    <h2>Friends</h2>
+                    <p className="friends-subtitle">{currentFriends.length} friends · {friendInvitations.length} pending</p>
+                  </div>
+                </div>
+
+                <div className="friends-top-grid">
+                  <section className="panel friends-block">
+                    <div className="friends-block-head">
+                      <h3>Pending invitations</h3>
+                    </div>
+                    <div className="friends-invite-list">
+                      {friendInvitations.length > 0 ? friendInvitations.map((inv) => {
+                        const inviterUser = users.find((u) => u.id === inv.inviterUserId)
+                        const displayName = inviterUser?.name || 'Someone'
+                        const displayEmail = inviterUser?.email || inv.inviteeEmail
+                        return (
+                          <div key={inv.id} className="friends-invite-row">
+                            <div className="friends-avatar invite-avatar">{displayName.slice(0, 2).toUpperCase()}</div>
+                            <div className="friends-person-meta">
+                              <strong>{displayName}</strong>
+                              <span>{displayEmail}</span>
+                            </div>
+                            <div className="friends-inline-actions">
+                              <button className="accept-btn" onClick={() => handleAcceptFriendInvitation(inv.id)}>Accept</button>
+                              <button className="decline-btn" onClick={() => handleDeclineFriendInvitation(inv.id)}>Decline</button>
+                            </div>
+                          </div>
+                        )
+                      }) : (
+                        <p className="muted">No pending invitations right now.</p>
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="panel friends-block">
+                    <div className="friends-block-head">
+                      <h3>Add friend</h3>
+                    </div>
+                    <form onSubmit={handleAddFriend} className="friends-add-form">
+                      <label className="friends-field">
+                        <span>Friend's name</span>
+                        <input
+                          type="text"
+                          placeholder="Friend's name"
+                          value={friendNameToAdd}
+                          onChange={(e) => setFriendNameToAdd(e.target.value)}
+                        />
+                      </label>
+                      <label className="friends-field">
+                        <span>Friend's email (required)</span>
+                        <input
+                          type="email"
+                          placeholder="Friend's email (required)"
+                          value={friendEmailToAdd}
+                          onChange={(e) => setFriendEmailToAdd(e.target.value)}
+                          required
+                        />
+                      </label>
+                      <button type="submit" className="friends-primary-btn">Send friend request</button>
+                    </form>
+                    {friendAddError && <p className="error-text" style={{ marginTop: '0.5rem' }}>{friendAddError}</p>}
+                    {friendAddSuccess && <p className="success-text" style={{ marginTop: '0.5rem' }}>{friendAddSuccess}</p>}
+                  </section>
+                </div>
+              </section>
+
+              {editingFriend && (
+                <section className="panel">
+                  <h2>Edit Friend</h2>
+                  <form onSubmit={handleUpdateFriend} className="form-inline-row">
+                    <input type="text" value={editFriendName} onChange={(e) => setEditFriendName(e.target.value)} required />
+                    <input type="email" value={editFriendEmail} onChange={(e) => setEditFriendEmail(e.target.value)} required />
+                    <button type="submit">Save</button>
+                    <button type="button" onClick={() => setEditingFriend(null)}>Cancel</button>
+                  </form>
+                </section>
+              )}
+
+              <section className="panel">
+                <div className="friends-block-head">
+                  <h3>My friends</h3>
+                </div>
+                {currentFriends.length === 0 ? (
+                  <p className="muted">No friends yet - add someone above!</p>
+                ) : (
+                  <ul className="friends-list">
+                    {currentFriends.map((f) => (
+                      <li key={f.id} className="friends-list-row">
+                        <div className="friends-person">
+                          <div className="friends-avatar">{f.name.slice(0, 2).toUpperCase()}</div>
+                          <div className="friends-person-meta">
+                            <strong>{f.name}</strong>
+                            <span>{f.email}</span>
+                          </div>
+                        </div>
+                        <div className="friends-balance-area">
+                          <span className={`friends-balance ${friendBalances[f.id] > 0 ? 'positive' : friendBalances[f.id] < 0 ? 'negative' : ''}`}>
+                            {friendBalances[f.id] > 0
+                              ? `Owes you ${getCurrencySymbol('INR')}${Number(friendBalances[f.id]).toFixed(2)}`
+                              : friendBalances[f.id] < 0
+                              ? `You owe ${getCurrencySymbol('INR')}${Math.abs(Number(friendBalances[f.id])).toFixed(2)}`
+                              : 'Settled'}
+                          </span>
+                          <div className="friends-inline-actions">
+                            {friendBalances[f.id] < 0 ? (
+                              <button
+                                className="accept-btn"
+                                onClick={async () => {
+                                  await authedFetch(`${API_BASE}/expenses/settle-with-friend?userId=${currentUserId}&friendId=${f.id}`, { method: 'POST' })
+                                  await fetchFriendBalances()
+                                  await fetchDashboardSummary()
+                                  await fetchActivities(currentUserId)
+                                }}
+                              >
+                                Settle
+                              </button>
+                            ) : friendBalances[f.id] > 0 ? (
+                              <button className="decline-btn friends-remind-btn">Remind</button>
+                            ) : null}
+                            <button className="icon-btn" title="Edit" onClick={() => startEditFriend(f)}>Edit</button>
+                            <button className="icon-btn danger" title="Remove" onClick={() => handleRemoveFriend(f.id)}>Remove</button>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              {pendingInvitations.filter(inv => inv.type === 'FRIEND').length > 0 && (
+                <section className="panel">
+                  <div className="friends-block-head">
+                    <h3>Sent friend requests</h3>
+                  </div>
+                  <div className="friends-invite-list">
+                    {pendingInvitations.filter(inv => inv.type === 'FRIEND').map((inv) => (
+                      <div key={inv.id} className="friends-invite-row sent-request-row">
+                        <div className="friends-avatar request-avatar">{(inv.inviteeName || inv.inviteeEmail).slice(0, 2).toUpperCase()}</div>
+                        <div className="friends-person-meta">
+                          <strong>{inv.inviteeName || inv.inviteeEmail}</strong>
+                          <span>{inv.inviteeEmail}</span>
+                        </div>
+                        <span className="friends-awaiting">Awaiting response</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="muted" style={{ marginTop: '0.5rem' }}>These people will see your friend request when they log in.</p>
+                </section>
+              )}
+            </>
+          )}
+
+          {false && activeTab === 'Friends' && (
             <>
             
               <section className="panel">
@@ -1477,6 +2153,165 @@ async function handleSettleUp(expenseId: string) {
           {/* ── Groups tab ── */}
           {activeTab === 'Groups' && !groupDetailView && (
             <>
+              <section className="groups-shell">
+                <div className="groups-hero panel">
+                  <div>
+                    <p className="dashboard-breadcrumb">Splitwise / Groups</p>
+                    <h2>Groups</h2>
+                    <p className="groups-subtitle">{sortedGroups.length} active groups</p>
+                  </div>
+                </div>
+
+                <div className="groups-card-grid">
+                  {groupOverview.map(({ group, total, yourShare, unsettledCount, latestLabel }) => (
+                    <button
+                      key={group.id}
+                      type="button"
+                      className="panel groups-summary-card"
+                      onClick={() => { setSelectedGroupId(group.id); setGroupDetailView(group.id); fetchGroupExpenses(group.id) }}
+                    >
+                      <div className="groups-summary-icon">{group.name.slice(0, 1).toUpperCase()}</div>
+                      <div className="groups-summary-body">
+                        <strong>{group.name}</strong>
+                        <span>{group.memberIds.length} members · {latestLabel}</span>
+                        <div className="groups-summary-metric">Total: {getCurrencySymbol('INR')}{total.toFixed(2)}</div>
+                        <div className="groups-summary-metric">Your share: {getCurrencySymbol('INR')}{yourShare.toFixed(2)}</div>
+                        <div className={`groups-summary-status ${unsettledCount > 0 ? 'negative' : 'positive'}`}>
+                          {unsettledCount > 0 ? `${unsettledCount} unsettled` : 'All settled'}
+                        </div>
+                      </div>
+                      <div className="groups-card-actions" onClick={(e) => e.stopPropagation()}>
+                        <button className="icon-btn" title="Edit" onClick={() => startEditGroup(group)}>Edit</button>
+                        <button className="icon-btn danger" title="Delete" onClick={() => handleDeleteGroup(group.id)}>Delete</button>
+                      </div>
+                    </button>
+                  ))}
+
+                  <button
+                    type="button"
+                    className="panel groups-new-card"
+                    onClick={() => setShowCreateGroupPanel((prev) => !prev)}
+                  >
+                    <span className="groups-new-plus">+</span>
+                    <span>New group</span>
+                  </button>
+                </div>
+              </section>
+
+              {showCreateGroupPanel && (
+                <section className="panel">
+                  <div className="groups-block-head">
+                    <h3>Create group</h3>
+                  </div>
+                  <form onSubmit={handleCreateGroup} className="form-vertical">
+                    <input
+                      type="text"
+                      placeholder="Group name (e.g. Vacation Varkala)"
+                      value={groupName}
+                      onChange={(e) => setGroupName(e.target.value)}
+                      required
+                    />
+                    <p className="muted" style={{ margin: '0.25rem 0' }}>Select friends to add:</p>
+                    <div className="pill-list">
+                      {currentFriends.length > 0 ? currentFriends.map((u) => (
+                        <button
+                          key={u.id}
+                          type="button"
+                          className={groupMemberIds.includes(u.id) ? 'pill pill-selected' : 'pill'}
+                          onClick={() => toggleGroupMember(u.id)}
+                        >
+                          {u.name}
+                        </button>
+                      )) : (
+                        <span className="muted">Add friends first to include them in groups</span>
+                      )}
+                    </div>
+                    <button type="submit">Create group</button>
+                  </form>
+                </section>
+              )}
+
+              {editingGroup && (
+                <section className="panel">
+                  <h2>Edit Group - {editingGroup!.name}</h2>
+                  <form onSubmit={handleUpdateGroup} className="form-vertical">
+                    <label className="field-label">Group name</label>
+                    <input type="text" value={editGroupName} onChange={(e) => setEditGroupName(e.target.value)} required />
+
+                    <label className="field-label" style={{ marginTop: '0.75rem' }}>Members</label>
+                    <div className="member-list">
+                      {editGroupMemberIds.map((mid) => {
+                        const member = users.find((u) => u.id === mid)
+                        if (!member) return null
+                        const isOwner = mid === editingGroup!.ownerId
+                        return (
+                          <div key={mid} className="member-row">
+                            <span>{member.name} <span className="muted">({member.email})</span></span>
+                            {isOwner ? (
+                              <span className="badge">Owner</span>
+                            ) : (
+                              <button type="button" className="icon-btn danger" title="Remove member" onClick={() => toggleEditGroupMember(mid)}>Remove</button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    <label className="field-label" style={{ marginTop: '0.75rem' }}>Add friends to group</label>
+                    <div className="pill-list">
+                      {currentFriends
+                        .filter((f) => !editGroupMemberIds.includes(f.id))
+                        .map((f) => (
+                          <button key={f.id} type="button" className="pill" onClick={() => toggleEditGroupMember(f.id)}>
+                            + {f.name}
+                          </button>
+                        ))}
+                      {currentFriends.filter((f) => !editGroupMemberIds.includes(f.id)).length === 0 && (
+                        <span className="muted">All friends already in group</span>
+                      )}
+                    </div>
+
+                    <div className="form-inline-row" style={{ marginTop: '0.75rem' }}>
+                      <button type="submit">Save changes</button>
+                      <button type="button" onClick={() => { setEditingGroup(null); setEditGroupMemberIds([]) }}>Cancel</button>
+                    </div>
+                  </form>
+                </section>
+              )}
+
+              {groupInvitations.length > 0 && (
+                <section className="panel">
+                  <div className="groups-block-head">
+                    <h3>Group invitations</h3>
+                  </div>
+                  <ul className="card-list">
+                    {groupInvitations.map((inv) => {
+                      const inviterUser = users.find((u) => u.id === inv.inviterUserId)
+                      return (
+                        <li key={inv.id} className="card group-card pending-invite">
+                          <div className="card-header">
+                            <div>
+                              <strong>{inv.groupName || 'Unknown group'}</strong>
+                              <span className="muted" style={{ marginLeft: '0.5rem' }}>
+                                invited by {inviterUser?.name || 'someone'}
+                              </span>
+                            </div>
+                            <div className="card-actions">
+                              <button className="accept-btn" title="Accept" onClick={() => handleAcceptGroupInvitation(inv.id)}>Accept</button>
+                              <button className="decline-btn" title="Decline" onClick={() => handleDeclineGroupInvitation(inv.id)}>Decline</button>
+                            </div>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </section>
+              )}
+            </>
+          )}
+
+          {false && activeTab === 'Groups' && !groupDetailView && (
+            <>
               <section className="panel">
                 <h2>Create Group</h2>
                 <form onSubmit={handleCreateGroup} className="form-vertical">
@@ -1508,7 +2343,7 @@ async function handleSettleUp(expenseId: string) {
 
               {editingGroup && (
                 <section className="panel">
-                  <h2>Edit Group — {editingGroup.name}</h2>
+                  <h2>Edit Group — {editingGroup!.name}</h2>
                   <form onSubmit={handleUpdateGroup} className="form-vertical">
                     <label className="field-label">Group name</label>
                     <input type="text" value={editGroupName} onChange={(e) => setEditGroupName(e.target.value)} required />
@@ -1518,7 +2353,7 @@ async function handleSettleUp(expenseId: string) {
                       {editGroupMemberIds.map((mid) => {
                         const member = users.find((u) => u.id === mid)
                         if (!member) return null
-                        const isOwner = mid === editingGroup.ownerId
+                        const isOwner = mid === editingGroup!.ownerId
                         return (
                           <div key={mid} className="member-row">
                             <span>{member.name} <span className="muted">({member.email})</span></span>
@@ -1720,291 +2555,401 @@ async function handleSettleUp(expenseId: string) {
 
           {/* ── Expenses tab ── */}
           {activeTab === 'Expenses' && (
-            <div className="expenses-columns">
-              <section className="panel">
-                <h3>Recurring Expenses</h3>
-                <ul className="card-list">
-                  {recurringTemplates.map((e) => {
-                    const grpName = e.groupId ? (groups.find((g) => g.id === e.groupId)?.name || 'Unknown group') : null
-                    const cadence = `${e.recurrenceInterval || 1} ${String(e.recurrenceType || 'MONTHLY').toLowerCase()}`
-                    return (
-                      <li key={e.id} className="card">
-                        <div className="card-header">
-                          <div>
-                            <strong>{e.description}</strong>
-                            <div className="muted" style={{ fontSize: '.75rem' }}>
-                              {e.type === 'GROUP' ? `Group: ${grpName}` : 'Personal'}
-                            </div>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <span>{getCurrencySymbol(e.currency)}{e.amount.toFixed(2)} ({e.currency})</span>
-                          </div>
-                        </div>
-                        <div className="card-body">
-                          <div className="muted">Repeats every {cadence}</div>
-                          {e.recurrenceStartDate && (
-                            <div className="muted">Start: {new Date(e.recurrenceStartDate).toLocaleDateString()}</div>
-                          )}
-                          {e.recurrenceEndDate && (
-                            <div className="muted">Ends: {new Date(e.recurrenceEndDate).toLocaleDateString()}</div>
-                          )}
-                        </div>
-                        <div className="card-actions">
-                          {e.createdBy === currentUserId && (
-                            <button onClick={ev => { ev.stopPropagation(); startEditExpense(e); setShowExpenseModal(true) }}>Edit</button>
-                          )}
-                          {(e.createdBy === currentUserId || (!e.createdBy && e.payerId === currentUserId)) && (
-                            <button onClick={ev => { ev.stopPropagation(); handleDeleteExpense(e) }}>Delete</button>
-                          )}
-                        </div>
-                      </li>
-                    )
-                  })}
-                  {recurringTemplates.length === 0 && <li className="muted">No recurring expenses yet</li>}
-                </ul>
-              </section>
-
-              <section className="panel">
-                <h3>Personal Expenses</h3>
-                <ul className="card-list">
-                  {[...personalExpenses]
-                    .filter((e) => !(e.isRecurring || e.recurring))
-                    .sort((a, b) => {
-                      const da = a.createdAt ? new Date(a.createdAt).getTime() : 0
-                      const db = b.createdAt ? new Date(b.createdAt).getTime() : 0
-                      return db - da
-                    })
-                    .map((e) => (
-                    <li key={e.id} className="card" style={{ cursor: 'pointer' }} onClick={() => setExpenseDetailView(e)}>
-                      <div className="card-header">
-                        <strong>{e.description}</strong>
-                        {e.flaggedBy && e.flaggedBy.length > 0 && (
-                          <span title={`Flagged by ${e.flaggedBy.length} participant${e.flaggedBy.length > 1 ? 's' : ''}`}
-                                style={{ color: 'orange', marginLeft: 8, fontSize: '1.1em', verticalAlign: 'middle' }}>
-                            🚩
-                          </span>
-                        )}
-                        <div style={{ textAlign: 'right' }}>
-                          <span>{getCurrencySymbol(e.currency)}{e.amount.toFixed(2)} ({e.currency})</span>
-                          {e.createdAt && <div className="muted" style={{ fontSize: '.75rem' }}>{new Date(e.createdAt).toLocaleString()}</div>}
-                        </div>
-                      </div>
-                      <div className="card-body">
-                        {e.imageUrl && <a href={e.imageUrl} target="_blank" rel="noreferrer">View bill</a>}
-                      </div>
-                        <div className="card-actions">
-                          {e.createdBy === currentUserId && (
-                            <button onClick={ev => { ev.stopPropagation(); startEditExpense(e); setShowExpenseModal(true) }}>Edit</button>
-                          )}
-                          {(e.createdBy === currentUserId || (!e.createdBy && e.payerId === currentUserId)) && (
-                            <button onClick={ev => { ev.stopPropagation(); handleDeleteExpense(e) }}>Delete</button>
-                          )}
-                        </div>
-                    </li>
-                  ))}
-                  {personalExpenses.length === 0 && <li className="muted">No personal expenses yet</li>}
-                </ul>
-              </section>
-
-              <section className="panel">
-                <h3>Group Expenses</h3>
-                <ul className="card-list">
-                  {[...allGroupExpenses]
-                    .filter((e) => !(e.isRecurring || e.recurring))
-                    .sort((a, b) => {
-                      const da = a.createdAt ? new Date(a.createdAt).getTime() : 0
-                      const db = b.createdAt ? new Date(b.createdAt).getTime() : 0
-                      return db - da
-                    })
-                    .map((e) => {
-                      const grpName = groups.find(g => g.id === e.groupId)?.name || 'Unknown group'
-                      return (
-                        <li key={e.id} className="card" style={{ cursor: 'pointer' }} onClick={() => setExpenseDetailView(e)}>
-                          <div className="card-header">
-                            <div>
-                              <strong>{e.description}</strong>
-                              {e.flaggedBy && e.flaggedBy.length > 0 && (
-                                <span title={`Flagged by ${e.flaggedBy.length} participant${e.flaggedBy.length > 1 ? 's' : ''}`}
-                                      style={{ color: 'orange', marginLeft: 8, fontSize: '1.1em', verticalAlign: 'middle' }}>
-                                  🚩
-                                </span>
-                              )}
-                              <div className="muted" style={{ fontSize: '.75rem' }}>{grpName}</div>
-                            </div>
-                            <div style={{ textAlign: 'right' }}>
-                              <span style={{ fontWeight: 600 }}>{getCurrencySymbol(e.currency)}{userShare(e).toFixed(2)}</span>
-                              <div className="muted" style={{ fontSize: '.7rem' }}>Your share of {getCurrencySymbol(e.currency)}{e.amount.toFixed(2)}</div>
-                              {e.createdAt && <div className="muted" style={{ fontSize: '.75rem' }}>{new Date(e.createdAt).toLocaleString()}</div>}
-                            </div>
-                          </div>
-                          <div className="card-body">
-                            <div className="paid-by">Paid by <strong>{payerName(e.payerId)}</strong></div>
-                            <div>{shareLabel(e)}</div>
-
-                            {e.payerId === currentUserId && (e.participantIds || []).length > 1 && (
-                             e.expenseStatus === 'Settled' ? (
-                                <div className="settled-text">✓ All settled</div>
-                             ) : (
-                                <div className="owes-row">
-                                  <span className="you-paid-info">Others owe you <strong>{getCurrencySymbol(e.currency)}{othersOweTotal(e).toFixed(2)}</strong></span>
-                                </div>
-                            )
-                            )}
-
-                            {e.payerId !== currentUserId && (e.participantIds || []).includes(currentUserId) && (
-                              e.settledByUser?.[currentUserId] ? (
-                              <div className="settled-text">✓ Settled up</div>
-                            ) : (
-                              <div className="owes-row">
-                              <span className="owes-amount">You owe <strong>{getCurrencySymbol(e.currency)}{userShare(e).toFixed(2)}</strong></span>
-                             <button className="settle-btn" onClick={ev => { ev.stopPropagation(); handleSettleUp(e.id) }}>Settle up</button>
-                             </div>
-                            )
-                          )} 
-
-                            {e.imageUrl && <a href={e.imageUrl} target="_blank" rel="noreferrer">View bill</a>}
-                          </div>
-                          <div className="card-actions">
-                            {e.createdBy === currentUserId && (
-                              <button onClick={ev => { ev.stopPropagation(); startEditExpense(e); setShowExpenseModal(true) }}>Edit</button>
-                            )}
-                            {(e.createdBy === currentUserId || (!e.createdBy && e.payerId === currentUserId)) && (
-                              <button onClick={ev => { ev.stopPropagation(); handleDeleteExpense(e) }}>Delete</button>
-                            )}
-                          </div>
-                        </li>
-                      )
-                    })}
-                  {allGroupExpenses.length === 0 && <li className="muted">No group expenses yet</li>}
-
-                    {/* Expense Detail Modal (top-level, always rendered) */}
-                    {expenseDetailView && (
-                      <div className="modal-overlay" onClick={() => setExpenseDetailView(null)}>
-                        <div className="modal" onClick={e => e.stopPropagation()} style={{ minWidth: 350, maxWidth: 500 }}>
-                          <div className="modal-header">
-                            <h2>Expense Details</h2>
-                            <button className="modal-close" onClick={() => setExpenseDetailView(null)}>✕</button>
-                          </div>
-                          <div className="modal-body">
-                            <div><strong>Description:</strong> {expenseDetailView.description}</div>
-                            <div><strong>Amount:</strong> {getCurrencySymbol(expenseDetailView.currency)}{expenseDetailView.amount.toFixed(2)} ({expenseDetailView.currency})</div>
-                            <div><strong>Payer:</strong> {payerName(expenseDetailView.payerId)}</div>
-                            <div><strong>Type:</strong> {expenseDetailView.type}</div>
-                            {expenseDetailView && (
-  <section className="panel">
-    <h3>Edit History</h3>
-    {expenseEditLogs[expenseDetailView.id]?.length ? (
-      <>
-        <ul>
-          {expenseEditLogs[expenseDetailView.id]
-            .slice(0, editLogDisplayCount)
-            .map((log, idx) => (
-              <li key={log.id || idx}>
+            <section className="expenses-shell">
+              <div className="expenses-hero panel">
                 <div>
-                  <strong>{expenseDetailView.description}</strong> edited on {new Date(log.editTime).toLocaleString()}<br />
-                  Reason: {log.reason}
-                  <br />
-                  <details>
-                    <summary>Show changes</summary>
-                    {/* ...existing code for showing changes... */}
-                  </details>
+                  <p className="dashboard-breadcrumb">Splitwise / Expenses</p>
+                  <h2>Expenses</h2>
+                  <p className="expenses-subtitle">
+                    {new Intl.DateTimeFormat('en-IN', { month: 'long', year: 'numeric' }).format(new Date())} - {expenseStats.expenseCount} expenses logged
+                  </p>
                 </div>
-              </li>
-            ))}
-        </ul>
-        {expenseEditLogs[expenseDetailView.id].length > editLogDisplayCount && (
-          <button
-            style={{ float: 'right', marginTop: 8 }}
-            onClick={() => setEditLogDisplayCount(editLogDisplayCount + 3)}
-          >
-            See more
-          </button>
-        )}
-      </>
-    ) : (
-      <div className="muted" style={{ marginTop: 16 }}>No edits yet.</div>
-    )}
-  </section>
-)}
-                            {expenseDetailView.imageUrl && <div><a href={expenseDetailView.imageUrl} target="_blank" rel="noreferrer">View bill</a></div>}
-                            {expenseDetailView.createdAt && <div className="muted">Created: {new Date(expenseDetailView.createdAt).toLocaleString()}</div>}
-                            {expenseDetailView.flaggedBy && expenseDetailView.flaggedBy.length > 0 && (
-  <div style={{ color: 'orange', marginBottom: '0.5rem' }}>
-    ⚠️ This expense has been flagged by {expenseDetailView.flaggedBy.length} participant{expenseDetailView.flaggedBy.length > 1 ? 's' : ''}
-  </div>
-)}
+                <div className="expenses-hero-actions">
+                  <button type="button" className="icon-btn" onClick={() => setExpenseDetailView(null)}>Clear selection</button>
+                  <button type="button" onClick={() => { resetExpenseForm(); setEditingExpense(null); setShowExpenseModal(true) }}>Add expense</button>
+                </div>
+              </div>
+
+              <div className="expenses-stat-grid">
+                <article className="panel expenses-stat-card">
+                  <span className="expenses-stat-label">Total logged</span>
+                  <strong className="expenses-stat-value">{getCurrencySymbol('INR')}{expenseStats.totalLogged.toFixed(2)}</strong>
+                  <span className="expenses-stat-note">Across personal, group, and recurring items</span>
+                </article>
+                <article className="panel expenses-stat-card">
+                  <span className="expenses-stat-label">You owe</span>
+                  <strong className="expenses-stat-value negative">{getCurrencySymbol('INR')}{expenseStats.youOwe.toFixed(2)}</strong>
+                  <span className="expenses-stat-note">Outstanding balances waiting on you</span>
+                </article>
+                <article className="panel expenses-stat-card">
+                  <span className="expenses-stat-label">Owed to you</span>
+                  <strong className="expenses-stat-value positive">{getCurrencySymbol('INR')}{expenseStats.owedToYou.toFixed(2)}</strong>
+                  <span className="expenses-stat-note">Incoming settlements from shared expenses</span>
+                </article>
+                <article className="panel expenses-stat-card">
+                  <span className="expenses-stat-label">Review queue</span>
+                  <strong className="expenses-stat-value">{expenseStats.flaggedCount}</strong>
+                  <span className="expenses-stat-note">{expenseStats.recurringCount} recurring templates active</span>
+                </article>
+              </div>
+
+              <div className="expenses-main-grid">
+                <div className="expenses-feed">
+                  <section className="panel expenses-feed-panel">
+                    <div className="expenses-feed-head">
+                      <div>
+                        <h3>{expensePageTitle}</h3>
+                        <p className="muted">Select an expense to inspect history, chat, and actions.</p>
+                      </div>
+                      <div className="expenses-filter-bar">
+                        {expenseFilterTabs.map((tab) => (
+                          <button
+                            key={tab.key}
+                            type="button"
+                            className={expenseViewFilter === tab.key ? 'expenses-filter-chip expenses-filter-chip-active' : 'expenses-filter-chip'}
+                            onClick={() => setExpenseViewFilter(tab.key)}
+                          >
+                            {tab.label} {tab.count}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="expenses-stream">
+                      {filteredExpenseFeed.length === 0 ? (
+                        <div className="expenses-empty-state">
+                          <strong>No expenses in this view yet.</strong>
+                          <span>Try another filter or add a new expense.</span>
+                        </div>
+                      ) : (
+                        filteredExpenseFeed.map((expense) => {
+                          const isGroupExpense = expense.type === 'GROUP'
+                          const groupName = expense.groupId ? (groups.find((group) => group.id === expense.groupId)?.name || 'Unknown group') : null
+                          const isRecurring = !!(expense.isRecurring || expense.recurring)
+                          const isSelected = expenseDetailView?.id === expense.id
+
+                          return (
+                            <article
+                              key={expense.id}
+                              className={isSelected ? 'expense-stream-card expense-stream-card-active' : 'expense-stream-card'}
+                              onClick={() => setExpenseDetailView(expense)}
+                            >
+                              <div className="expense-stream-main">
+                                <div className="expense-stream-icon">{isGroupExpense ? 'G' : 'P'}</div>
+                                <div className="expense-stream-copy">
+                                  <div className="expense-stream-topline">
+                                    <strong>{expense.description}</strong>
+                                    {expense.flaggedBy && expense.flaggedBy.length > 0 && (
+                                      <span className="expense-flag-pill">Flagged {expense.flaggedBy.length}</span>
+                                    )}
+                                    {isRecurring && <span className="expense-recurring-pill">Recurring</span>}
+                                  </div>
+                                  <div className="expense-stream-meta">
+                                    <span>{isGroupExpense ? (groupName || 'Group expense') : 'Personal expense'}</span>
+                                    <span>{payerName(expense.payerId)}</span>
+                                    {expense.createdAt && <span>{new Date(expense.createdAt).toLocaleDateString()}</span>}
+                                  </div>
+                                  <div className="expense-stream-support">
+                                    {isGroupExpense ? (
+                                      <>
+                                        <span>{shareLabel(expense)}</span>
+                                        {expense.payerId === currentUserId && (expense.participantIds || []).length > 1 && expense.expenseStatus !== 'Settled' && (
+                                          <span className="positive">Others owe {getCurrencySymbol(expense.currency)}{othersOweTotal(expense).toFixed(2)}</span>
+                                        )}
+                                        {expense.payerId !== currentUserId && (expense.participantIds || []).includes(currentUserId) && !expense.settledByUser?.[currentUserId] && (
+                                          <span className="negative">You owe {getCurrencySymbol(expense.currency)}{userShare(expense).toFixed(2)}</span>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <span>{expense.imageUrl ? 'Bill attached' : 'No bill attached'}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="expense-stream-side">
+                                <strong>{getCurrencySymbol(expense.currency)}{isGroupExpense ? userShare(expense).toFixed(2) : expense.amount.toFixed(2)}</strong>
+                                <span className="muted">
+                                  {isGroupExpense ? `your share of ${getCurrencySymbol(expense.currency)}${expense.amount.toFixed(2)}` : expense.currency}
+                                </span>
+                                <div className="expense-stream-actions">
+                                  {isGroupExpense && expense.payerId !== currentUserId && (expense.participantIds || []).includes(currentUserId) && !expense.settledByUser?.[currentUserId] && (
+                                    <button className="settle-btn" onClick={(event) => { event.stopPropagation(); handleSettleUp(expense.id) }}>Settle</button>
+                                  )}
+                                  {expense.createdBy === currentUserId && (
+                                    <button onClick={(event) => { event.stopPropagation(); startEditExpense(expense); setShowExpenseModal(true) }}>Edit</button>
+                                  )}
+                                  {(expense.createdBy === currentUserId || (!expense.createdBy && expense.payerId === currentUserId)) && (
+                                    <button onClick={(event) => { event.stopPropagation(); handleDeleteExpense(expense) }}>Delete</button>
+                                  )}
+                                </div>
+                              </div>
+                            </article>
+                          )
+                        })
+                      )}
+                    </div>
+                  </section>
+                </div>
+
+                <aside className="panel expenses-detail-panel">
+                  {expenseDetailView ? (
+                    <>
+                      <div className="expenses-detail-head">
+                        <div>
+                          <p className="expenses-detail-eyebrow">
+                            {expenseDetailView.type === 'GROUP'
+                              ? (groups.find((group) => group.id === expenseDetailView.groupId)?.name || 'Group expense')
+                              : 'Personal expense'}
+                          </p>
+                          <h3>{expenseDetailView.description}</h3>
+                        </div>
+                        <div className="expenses-detail-amount">
+                          <strong>{getCurrencySymbol(expenseDetailView.currency)}{expenseDetailView.amount.toFixed(2)}</strong>
+                          <span>{expenseDetailView.currency}</span>
+                        </div>
+                      </div>
+
+                      <div className="expenses-detail-summary">
+                        <div className="expenses-detail-kv">
+                          <span>Payer</span>
+                          <strong>{payerName(expenseDetailView.payerId)}</strong>
+                        </div>
+                        <div className="expenses-detail-kv">
+                          <span>Created</span>
+                          <strong>{expenseDetailView.createdAt ? new Date(expenseDetailView.createdAt).toLocaleString() : 'Unknown'}</strong>
+                        </div>
+                        <div className="expenses-detail-kv">
+                          <span>Status</span>
+                          <strong>{expenseDetailView.expenseStatus || 'Open'}</strong>
+                        </div>
+                      </div>
+
+                      {expenseDetailView.flaggedBy && expenseDetailView.flaggedBy.length > 0 && (
+                        <div className="expenses-alert">
+                          This expense has been flagged by {expenseDetailView.flaggedBy.length} participant{expenseDetailView.flaggedBy.length > 1 ? 's' : ''}.
+                        </div>
+                      )}
+
+                      <div className="expenses-detail-actions">
+                        {expenseDetailView.createdBy === currentUserId && (
+                          <button type="button" onClick={() => { startEditExpense(expenseDetailView); setShowExpenseModal(true) }}>Edit expense</button>
+                        )}
+                        {(expenseDetailView.createdBy === currentUserId || (!expenseDetailView.createdBy && expenseDetailView.payerId === currentUserId)) && (
+                          <button type="button" onClick={() => handleDeleteExpense(expenseDetailView)}>Delete</button>
+                        )}
+                        {expenseDetailView.createdBy !== currentUserId && (
+                          expenseDetailView.flaggedBy?.includes(currentUserId) ? (
+                            <button type="button" onClick={() => handleUnflagExpense(expenseDetailView.id)}>Unflag expense</button>
+                          ) : (
+                            <button type="button" onClick={() => handleFlagExpense(expenseDetailView.id)}>Flag expense</button>
+                          )
+                        )}
+                        {expenseDetailView.groupId && expenseDetailView.payerId !== currentUserId && (expenseDetailView.participantIds || []).includes(currentUserId) && !expenseDetailView.settledByUser?.[currentUserId] && (
+                          <button type="button" className="settle-btn" onClick={() => handleSettleUp(expenseDetailView.id)}>Settle up</button>
+                        )}
+                      </div>
+
+                      {expenseDetailView.type === 'GROUP' && (
+                        <div className="expenses-detail-section">
+                          <h4>Split summary</h4>
+                          <div className="expenses-detail-copy">
+                            <div>{shareLabel(expenseDetailView)}</div>
+                            {expenseDetailView.payerId === currentUserId && (expenseDetailView.participantIds || []).length > 1 && (
+                              expenseDetailView.expenseStatus === 'Settled' ? (
+                                <div className="settled-text">All settled</div>
+                              ) : (
+                                <div className="you-paid-info">Others owe you {getCurrencySymbol(expenseDetailView.currency)}{othersOweTotal(expenseDetailView).toFixed(2)}</div>
+                              )
+                            )}
+                            {expenseDetailView.payerId !== currentUserId && (expenseDetailView.participantIds || []).includes(currentUserId) && (
+                              expenseDetailView.settledByUser?.[currentUserId] ? (
+                                <div className="settled-text">You already settled this expense.</div>
+                              ) : (
+                                <div className="owes-amount">You owe {getCurrencySymbol(expenseDetailView.currency)}{userShare(expenseDetailView).toFixed(2)}</div>
+                              )
+                            )}
                           </div>
-                          {expenseDetailView.createdBy !== currentUserId && (
-  <div style={{ margin: '1rem 0' }}>
-    {expenseDetailView.flaggedBy?.includes(currentUserId) ? (
-      <button onClick={() => handleUnflagExpense(expenseDetailView.id)}>
-        Unflag Expense
-      </button>
-    ) : (
-      <button onClick={() => handleFlagExpense(expenseDetailView.id)}>
-        Flag Expense
-      </button>
-    )}
-  </div>
-)}
-                          {/* Expense Chat UI */}
-                          {expenseDetailView.groupId ? (
-                            <div className="expense-chat-panel" style={{ marginTop: '1.5rem', borderTop: '1px solid #333', paddingTop: '1rem' }}>
-                              <h3>Expense Chat</h3>
-                              <div className="expense-chat-messages" style={{ maxHeight: 200, overflowY: 'auto', marginBottom: '1rem', background: '#222', padding: '0.5rem', borderRadius: 6 }}>
-                                {(expenseChats[expenseDetailView.id] || []).length === 0 && <div className="muted">No messages yet.</div>}
-                                {(expenseChats[expenseDetailView.id] || []).map((msg, idx) => (
-                                  <div key={idx} style={{ marginBottom: 8 }}>
-                                    <span style={{ fontWeight: msg.user === currentUserName ? 'bold' : 'normal', color: msg.user === currentUserName ? '#6cf' : '#fff' }}>{msg.user}:</span> <span>{msg.message}</span>
-                                    <div className="muted" style={{ fontSize: '0.7rem' }}>{msg.timestamp}</div>
+                        </div>
+                      )}
+
+                      {expenseDetailView.imageUrl && (
+                        <div className="expenses-detail-section">
+                          <h4>Attachment</h4>
+                          <a href={expenseDetailView.imageUrl} target="_blank" rel="noreferrer">View bill</a>
+                        </div>
+                      )}
+
+                      <div className="expenses-detail-section">
+                        <h4>Edit history</h4>
+                        {expenseEditLogs[expenseDetailView.id]?.length ? (
+                          <>
+                            <div className="expenses-history-list">
+                              {expenseEditLogs[expenseDetailView.id]
+                                .slice(0, editLogDisplayCount)
+                                .map((log, idx) => (
+                                  <div key={log.id || idx} className="expenses-history-item">
+                                    <strong>{new Date(log.editTime).toLocaleString()}</strong>
+                                    <span>{log.reason || 'Updated expense details'}</span>
                                   </div>
                                 ))}
-                              </div>
-                              <div style={{ display: 'flex', gap: 8 }}>
-                                <input
-                                  type="text"
-                                  value={expenseChatInputs[expenseDetailView.id] || ''}
-                                  onChange={e => setExpenseChatInputs(prev => ({ ...prev, [expenseDetailView.id]: e.target.value }))}
-                                  placeholder="Type a message..."
-                                  style={{ flex: 1 }}
-                                  onKeyDown={e => { if (e.key === 'Enter') handleSendExpenseChatMessage(expenseDetailView.id); }}
-                                />
-                                <button type="button" onClick={() => handleSendExpenseChatMessage(expenseDetailView.id)} disabled={!(expenseChatInputs[expenseDetailView.id]?.trim())}>Send</button>
-                              </div>
                             </div>
-                          ) : (
-                            <div className="expense-chat-panel" style={{ marginTop: '1.5rem', borderTop: '1px solid #333', paddingTop: '1rem', color: '#f66' }}>
-                              <strong>Expense chat is only available for group expenses.</strong>
-                            </div>
-                          )}
-                        </div>
+                            {expenseEditLogs[expenseDetailView.id].length > editLogDisplayCount && (
+                              <button type="button" className="icon-btn" onClick={() => setEditLogDisplayCount(editLogDisplayCount + 3)}>See more</button>
+                            )}
+                          </>
+                        ) : (
+                          <div className="muted">No edits yet.</div>
+                        )}
                       </div>
-                    )}
-                </ul>
-              </section>
-            </div>
-          )}
 
+                      <div className="expenses-detail-section">
+                        <h4>Expense chat</h4>
+                        {expenseDetailView.groupId ? (
+                          <div className="expense-chat-panel">
+                            <div className="expense-chat-messages">
+                              {(expenseChats[expenseDetailView.id] || []).length === 0 && <div className="muted">No messages yet.</div>}
+                              {(expenseChats[expenseDetailView.id] || []).map((msg, idx) => (
+                                <div key={idx} className="expense-chat-message">
+                                  <span className={msg.user === currentUserName ? 'expense-chat-user expense-chat-user-self' : 'expense-chat-user'}>{msg.user}</span>
+                                  <span>{msg.message}</span>
+                                  <div className="muted" style={{ fontSize: '0.7rem' }}>{msg.timestamp}</div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="expense-chat-composer">
+                              <input
+                                type="text"
+                                value={expenseChatInputs[expenseDetailView.id] || ''}
+                                onChange={(event) => setExpenseChatInputs((prev) => ({ ...prev, [expenseDetailView.id]: event.target.value }))}
+                                placeholder="Type a message..."
+                                onKeyDown={(event) => { if (event.key === 'Enter') handleSendExpenseChatMessage(expenseDetailView.id) }}
+                              />
+                              <button type="button" onClick={() => handleSendExpenseChatMessage(expenseDetailView.id)} disabled={!(expenseChatInputs[expenseDetailView.id]?.trim())}>Send</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="muted">Expense chat is only available for group expenses.</div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="expenses-placeholder">
+                      <div className="expenses-placeholder-icon">[]</div>
+                      <h3>Select an expense</h3>
+                      <p className="muted">Click any expense from the list to open its breakdown, edit history, flag status, and expense chat.</p>
+                    </div>
+                  )}
+                </aside>
+              </div>
+            </section>
+          )}
           {/* ── Activity tab ── */}
           {activeTab === 'Activity' && (
-            <section className="panel">
-              <h2>Activity</h2>
-              <ul className="list">
-                {filteredActivities.map((a) => (
-                  <li key={a.id}>
-                    <div>{a.description}</div>
-                    <small>{new Date(a.createdAt).toLocaleString()}</small>
-                  </li>
-                ))}
-                {filteredActivities.length === 0 && <li className="muted">No activity yet</li>}
-              </ul>
-              {activityHasMore && (
-                <button className="see-more-btn" onClick={async () => {
-                  const nextPage = activityPage + 1;
-                  setActivityPage(nextPage);
-                  await fetchActivities(currentUserId, nextPage, true);
-                }}>See more</button>
-              )}
+            <section className="activity-shell">
+              <div className="activity-hero panel">
+                <div>
+                  <p className="dashboard-breadcrumb">Splitwise / Activity</p>
+                  <h2>Activity</h2>
+                  <p className="activity-subtitle">A complete list of your transactions and expense updates.</p>
+                </div>
+              </div>
+
+              <div className="activity-stat-grid">
+                <article className="panel activity-stat-card">
+                  <span className="activity-stat-label">Total updates</span>
+                  <strong className="activity-stat-value">{activityStats.total}</strong>
+                  <span className="activity-stat-note">{activityStats.visible} visible with current filters</span>
+                </article>
+                <article className="panel activity-stat-card">
+                  <span className="activity-stat-label">Expense updates</span>
+                  <strong className="activity-stat-value positive">{activityStats.expenses}</strong>
+                  <span className="activity-stat-note">Added or changed expense activity</span>
+                </article>
+                <article className="panel activity-stat-card">
+                  <span className="activity-stat-label">Settlement activity</span>
+                  <strong className="activity-stat-value negative">{activityStats.settlements}</strong>
+                  <span className="activity-stat-note">Balances, dues, and settlement movement</span>
+                </article>
+              </div>
+
+              <section className="panel activity-panel">
+                <div className="activity-toolbar">
+                  <div className="activity-filter-row">
+                    {activityFilterTabs.map((tab) => (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        className={activityFilter === tab.key ? 'activity-filter-chip activity-filter-chip-active' : 'activity-filter-chip'}
+                        onClick={() => setActivityFilter(tab.key)}
+                      >
+                        {tab.label} {tab.count}
+                      </button>
+                    ))}
+                  </div>
+
+                  <label className="activity-sort">
+                    <span>Sort by</span>
+                    <select value={activitySortOrder} onChange={(event) => setActivitySortOrder(event.target.value as ActivitySortOrder)}>
+                      <option value="NEWEST">Newest first</option>
+                      <option value="OLDEST">Oldest first</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="activity-groups">
+                  {activityGroups.length === 0 ? (
+                    <div className="activity-empty-state">
+                      <strong>No activity yet.</strong>
+                      <span>Try a different filter or search term.</span>
+                    </div>
+                  ) : (
+                    activityGroups.map((group) => (
+                      <section key={group.key} className="activity-day-group">
+                        <div className="activity-day-head">
+                          <div className="activity-day-title">
+                            <span className="activity-day-icon">DT</span>
+                            <strong>{group.label}</strong>
+                          </div>
+                          <span className="muted">{group.items.length} updates</span>
+                        </div>
+
+                        <div className="activity-list">
+                          {group.items.map((activity) => {
+                            const tone = getActivityTone(activity)
+                            const category = getActivityCategory(activity)
+                            return (
+                              <article key={activity.id} className="activity-row">
+                                <div className={`activity-row-icon activity-row-icon-${tone}`}>
+                                  {getActivityBadge(activity)}
+                                </div>
+                                <div className="activity-row-main">
+                                  <strong>{activity.description}</strong>
+                                  <span>{new Date(activity.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                                <div className="activity-row-meta">
+                                  <span className={`activity-category activity-category-${category.toLowerCase()}`}>{category.toLowerCase()}</span>
+                                  <span className="muted">{formatRelativeTime(activity.createdAt)}</span>
+                                </div>
+                              </article>
+                            )
+                          })}
+                        </div>
+                      </section>
+                    ))
+                  )}
+                </div>
+
+                {activityHasMore && (
+                  <div className="activity-load-more">
+                    <button className="see-more-btn" onClick={async () => {
+                      const nextPage = activityPage + 1;
+                      setActivityPage(nextPage);
+                      await fetchActivities(currentUserId, nextPage, true);
+                    }}>Load more activity</button>
+                  </div>
+                )}
+              </section>
             </section>
           )}
 

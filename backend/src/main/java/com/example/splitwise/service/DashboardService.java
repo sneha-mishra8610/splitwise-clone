@@ -4,17 +4,18 @@ import com.example.splitwise.repository.ExpenseRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.YearMonth;
+import java.util.Map;
 
 @Service
 public class DashboardService {
 
 	private final ExpenseRepository expenseRepository;
+	private final UserService userService;
 
 	@Autowired
-	public DashboardService(ExpenseRepository expenseRepository) {
+	public DashboardService(ExpenseRepository expenseRepository, UserService userService) {
 		this.expenseRepository = expenseRepository;
+		this.userService = userService;
 	}
 
 	public DashboardSummary getDashboardSummary(String userId) {
@@ -27,28 +28,10 @@ public class DashboardService {
 
 	private BigDecimal getTotalOwedToUser(String userId) {
 		BigDecimal total = BigDecimal.ZERO;
-		var expenses = expenseRepository.findByPayerId(userId);
-		for (var expense : expenses) {
-			if (expense.getCustomSplits() != null) {
-				for (var entry : expense.getCustomSplits().entrySet()) {
-					String participantId = entry.getKey();
-					BigDecimal share = entry.getValue();
-					if (expense.getSettledByUser() == null || !expense.getSettledByUser().getOrDefault(participantId, false)) {
-						total = total.add(share);
-					}
-				}
-			} else if (expense.getParticipantIds() != null) {
-				int numParticipants = expense.getParticipantIds().size();
-				if (numParticipants > 1) {
-					BigDecimal share = expense.getAmount().divide(BigDecimal.valueOf(numParticipants), BigDecimal.ROUND_HALF_UP);
-					for (String participantId : expense.getParticipantIds()) {
-						if (!participantId.equals(userId)) {
-							if (expense.getSettledByUser() == null || !expense.getSettledByUser().getOrDefault(participantId, false)) {
-								total = total.add(share);
-							}
-						}
-					}
-				}
+		Map<String, BigDecimal> friendBalances = userService.getAllFriendBalances(userId);
+		for (BigDecimal balance : friendBalances.values()) {
+			if (balance.compareTo(BigDecimal.ZERO) > 0) {
+				total = total.add(balance);
 			}
 		}
 		return total;
@@ -56,23 +39,10 @@ public class DashboardService {
 
 	private BigDecimal getTotalUserOwes(String userId) {
 		BigDecimal total = BigDecimal.ZERO;
-		var expenses = expenseRepository.findByParticipantIdsContaining(userId);
-		for (var expense : expenses) {
-			if (expense.getPayerId().equals(userId))
-				continue;
-			boolean isSettled = expense.getSettledByUser() != null && expense.getSettledByUser().getOrDefault(userId, false);
-			if (isSettled) continue;
-			if (expense.getCustomSplits() != null) {
-				for (var entry : expense.getCustomSplits().entrySet()) {
-					String participantId = entry.getKey();
-					BigDecimal share = entry.getValue();
-					if (participantId.equals(userId))
-						total = total.add(share);
-				}
-			} else if (expense.getParticipantIds() != null) {
-				int numParticipants = expense.getParticipantIds().size();
-				BigDecimal share = expense.getAmount().divide(BigDecimal.valueOf(numParticipants), BigDecimal.ROUND_HALF_EVEN);
-				total = total.add(share);
+		Map<String, BigDecimal> friendBalances = userService.getAllFriendBalances(userId);
+		for (BigDecimal balance : friendBalances.values()) {
+			if (balance.compareTo(BigDecimal.ZERO) < 0) {
+				total = total.add(balance.abs());
 			}
 		}
 		return total;
