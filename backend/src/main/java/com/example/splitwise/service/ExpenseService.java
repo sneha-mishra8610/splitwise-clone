@@ -440,17 +440,32 @@ public void settleExpense(String expenseId, String settlingUserId) {
     public void settleAllWithFriend(String userId, String friendId) {
     List<Expense> expenses = expenseRepository.findByBothParticipants(userId, friendId);
     for (Expense expense : expenses) {
-    if (expense.getSettledByUser() == null) continue;
-    if (!expense.getPayerId().equals(userId) && expense.getParticipantIds().contains(userId)) {
-        if (!Boolean.TRUE.equals(expense.getSettledByUser().get(userId))) {
-            expense.getSettledByUser().put(userId, true);
-            boolean allSettled = expense.getParticipantIds().stream()
-                .filter(pid -> !pid.equals(expense.getPayerId()))
-                .allMatch(pid -> Boolean.TRUE.equals(expense.getSettledByUser().get(pid)));
-            expense.setExpenseStatus(allSettled ? Expense.ExpenseStatus.Settled : Expense.ExpenseStatus.Unsettled);
-            expenseRepository.save(expense);
+        if (!expense.getParticipantIds().contains(userId) || !expense.getParticipantIds().contains(friendId)) {
+            continue;
         }
-    }
+        Map<String, Boolean> settledByUser = expense.getSettledByUser();
+        if (settledByUser == null) {
+            settledByUser = new HashMap<>();
+            expense.setSettledByUser(settledByUser);
+        }
+        final Map<String, Boolean> settledState = settledByUser;
+        boolean changed = false;
+        if (friendId.equals(expense.getPayerId()) && !Boolean.TRUE.equals(settledState.get(userId))) {
+            settledState.put(userId, true);
+            changed = true;
+        }
+        if (userId.equals(expense.getPayerId()) && !Boolean.TRUE.equals(settledState.get(friendId))) {
+            settledState.put(friendId, true);
+            changed = true;
+        }
+        if (!changed) {
+            continue;
+        }
+        boolean allSettled = expense.getParticipantIds().stream()
+            .filter(pid -> !pid.equals(expense.getPayerId()))
+            .allMatch(pid -> Boolean.TRUE.equals(settledState.get(pid)));
+        expense.setExpenseStatus(allSettled ? Expense.ExpenseStatus.Settled : Expense.ExpenseStatus.Unsettled);
+        expenseRepository.save(expense);
     }
     }
 }
