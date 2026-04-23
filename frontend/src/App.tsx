@@ -1340,7 +1340,7 @@ async function handleSettleUp(expenseId: string) {
         <header className="app-header">
           <div className="header-left">
             <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle theme" title="Toggle theme">🌙</button>
-            <h1>Splitwise</h1>
+            <h1>Finwise</h1>
           </div>
         </header>
         <div className="auth-layout">
@@ -1523,7 +1523,7 @@ async function handleSettleUp(expenseId: string) {
       <header className="app-header">
         <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle theme" title="Toggle theme">🌙</button>
-          <h1 style={{ margin: 0 }}>Splitwise</h1>
+          <h1 style={{ margin: 0 }}>Finwise</h1>
         </div>
         <div className="header-center">
           {['Groups', 'Friends', 'Activity'].includes(activeTab) && !groupDetailView && (
@@ -1665,7 +1665,7 @@ async function handleSettleUp(expenseId: string) {
             <section className="dashboard-shell">
               <div className="dashboard-hero panel">
                 <div>
-                  <p className="dashboard-breadcrumb">Splitwise / Dashboard</p>
+                  <p className="dashboard-breadcrumb">Finwise / Dashboard</p>
                   <h2>{greeting}, {currentUser.name}</h2>
                   <p className="dashboard-subtitle">{dashboardDateLabel} - here is your financial snapshot</p>
                 </div>
@@ -1854,7 +1854,7 @@ async function handleSettleUp(expenseId: string) {
               <section className="friends-shell">
                 <div className="friends-hero panel">
                   <div>
-                    <p className="dashboard-breadcrumb">Splitwise / Friends</p>
+                    <p className="dashboard-breadcrumb">Finwise / Friends</p>
                     <h2>Friends</h2>
                     <p className="friends-subtitle">{currentFriends.length} friends · {friendInvitations.length} pending</p>
                   </div>
@@ -2156,7 +2156,7 @@ async function handleSettleUp(expenseId: string) {
               <section className="groups-shell">
                 <div className="groups-hero panel">
                   <div>
-                    <p className="dashboard-breadcrumb">Splitwise / Groups</p>
+                    <p className="dashboard-breadcrumb">Finwise / Groups</p>
                     <h2>Groups</h2>
                     <p className="groups-subtitle">{sortedGroups.length} active groups</p>
                   </div>
@@ -2558,7 +2558,7 @@ async function handleSettleUp(expenseId: string) {
             <section className="expenses-shell">
               <div className="expenses-hero panel">
                 <div>
-                  <p className="dashboard-breadcrumb">Splitwise / Expenses</p>
+                  <p className="dashboard-breadcrumb">Finwise / Expenses</p>
                   <h2>Expenses</h2>
                   <p className="expenses-subtitle">
                     {new Intl.DateTimeFormat('en-IN', { month: 'long', year: 'numeric' }).format(new Date())} - {expenseStats.expenseCount} expenses logged
@@ -2849,7 +2849,7 @@ async function handleSettleUp(expenseId: string) {
             <section className="activity-shell">
               <div className="activity-hero panel">
                 <div>
-                  <p className="dashboard-breadcrumb">Splitwise / Activity</p>
+                  <p className="dashboard-breadcrumb">Finwise / Activity</p>
                   <h2>Activity</h2>
                   <p className="activity-subtitle">A complete list of your transactions and expense updates.</p>
                 </div>
