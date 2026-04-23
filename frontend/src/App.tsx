@@ -79,6 +79,79 @@ type DashboardSummary = {
   spentThisMonth: number
 }
 
+type BudgetPeriod = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
+
+function getBudgetPeriodMeta(period: BudgetPeriod, now: Date) {
+  const year = now.getFullYear()
+  const month = now.getMonth()
+  const day = now.getDate()
+  const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+
+  if (period === 'DAILY') {
+    const start = new Date(year, month, day)
+    const end = new Date(year, month, day + 1)
+    return {
+      storageToken: dateKey,
+      rangeStart: start,
+      rangeEnd: end,
+      label: now.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }),
+      titleLabel: 'Daily',
+      placeholder: 'Set daily budget',
+    }
+  }
+
+  if (period === 'WEEKLY') {
+    const start = new Date(year, month, day)
+    const mondayOffset = (start.getDay() + 6) % 7
+    start.setDate(start.getDate() - mondayOffset)
+    const end = new Date(start)
+    end.setDate(start.getDate() + 7)
+    const startKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`
+    const endLabel = new Date(end.getTime() - 1).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+    return {
+      storageToken: startKey,
+      rangeStart: start,
+      rangeEnd: end,
+      label: `${start.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} - ${endLabel}`,
+      titleLabel: 'Weekly',
+      placeholder: 'Set weekly budget',
+    }
+  }
+
+  if (period === 'MONTHLY') {
+    return {
+      storageToken: `${year}-${String(month + 1).padStart(2, '0')}`,
+      rangeStart: new Date(year, month, 1),
+      rangeEnd: new Date(year, month + 1, 1),
+      label: now.toLocaleString('default', { month: 'long', year: 'numeric' }),
+      titleLabel: 'Monthly',
+      placeholder: 'Set monthly budget',
+    }
+  }
+
+  if (period === 'QUARTERLY') {
+    const quarterIndex = Math.floor(month / 3)
+    const quarter = quarterIndex + 1
+    return {
+      storageToken: `${year}-Q${quarter}`,
+      rangeStart: new Date(year, quarterIndex * 3, 1),
+      rangeEnd: new Date(year, quarterIndex * 3 + 3, 1),
+      label: `Q${quarter} ${year}`,
+      titleLabel: 'Quarterly',
+      placeholder: 'Set quarterly budget',
+    }
+  }
+
+  return {
+    storageToken: String(year),
+    rangeStart: new Date(year, 0, 1),
+    rangeEnd: new Date(year + 1, 0, 1),
+    label: String(year),
+    titleLabel: 'Yearly',
+    placeholder: 'Set yearly budget',
+  }
+}
+
 function getCurrencySymbol(currency: string) {
   switch (currency) {
     case 'USD': return '$'
@@ -344,15 +417,24 @@ function App() {
   };
   const [expenseEditLogs, setExpenseEditLogs] = useState<{ [expenseId: string]: ExpenseEditLog[] }>({});
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
-  const [expenseViewFilter, setExpenseViewFilter] = useState<'ALL' | 'PERSONAL' | 'GROUP' | 'RECURRING' | 'FLAGGED'>('ALL')
+  const [expenseViewFilter, setExpenseViewFilter] = useState<'ALL' | 'PERSONAL' | 'GROUP' | 'UNSETTLED' | 'RECURRING' | 'FLAGGED'>('ALL')
 
   const [activeTab, setActiveTab] = useState<'Home' | 'Groups' | 'Expenses' | 'Friends' | 'Activity' | 'Account'>('Home')
 
   const [groupDetailView, setGroupDetailView] = useState<string | null>(null)
+  const [friendDetailView, setFriendDetailView] = useState<string | null>(null)
+  const [showQuickGroupChat, setShowQuickGroupChat] = useState(false)
+  const [quickChatGroupId, setQuickChatGroupId] = useState('')
 
     useEffect(() => {
   setEditLogDisplayCount(3);
   }, [expenseDetailView]);
+
+  useEffect(() => {
+    setWorkspaceExpenseSearch('')
+    setWorkspaceExpenseStatusFilter('ALL')
+    setWorkspaceExpenseDateFilter('ALL')
+  }, [groupDetailView, friendDetailView]);
   
   useEffect(() => {
     if (!groupDetailView) return;
@@ -366,6 +448,19 @@ function App() {
     poll();
     return () => { stopped = true; };
   }, [groupDetailView,fetchGroupChatMessages]);
+
+  useEffect(() => {
+    if (!showQuickGroupChat || !quickChatGroupId) return;
+    let stopped = false;
+    async function poll() {
+      await fetchGroupChatMessages(quickChatGroupId);
+      if (!stopped) {
+        setTimeout(poll, 3000);
+      }
+    }
+    poll();
+    return () => { stopped = true; };
+  }, [showQuickGroupChat, quickChatGroupId, fetchGroupChatMessages]);
 
   useEffect(() => {
     const expense = editingExpense || expenseDetailView;
@@ -384,9 +479,20 @@ function App() {
 
   const [groupSearch, setGroupSearch] = useState('')
   const [friendSearch, setFriendSearch] = useState('')
+  const [workspaceExpenseSearch, setWorkspaceExpenseSearch] = useState('')
+  const [workspaceExpenseStatusFilter, setWorkspaceExpenseStatusFilter] = useState<'ALL' | 'SETTLED' | 'UNSETTLED'>('ALL')
+  const [workspaceExpenseDateFilter, setWorkspaceExpenseDateFilter] = useState<'ALL' | '7_DAYS' | '30_DAYS' | '90_DAYS'>('ALL')
   const [activitySearch, setActivitySearch] = useState('')
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>('ALL')
   const [activitySortOrder, setActivitySortOrder] = useState<ActivitySortOrder>('NEWEST')
+  const [dashboardPeriod, setDashboardPeriod] = useState<BudgetPeriod>('MONTHLY')
+  const [dashboardBudgetAmount, setDashboardBudgetAmount] = useState<number>(0)
+  const [selectedBudgetPeriod, setSelectedBudgetPeriod] = useState<BudgetPeriod>('MONTHLY')
+  const [budgetInput, setBudgetInput] = useState('')
+  const [budgetAmount, setBudgetAmount] = useState<number>(0)
+  const [accountChartDrillStartMs, setAccountChartDrillStartMs] = useState<number | null>(null)
+  const [accountChartDrillEndMs, setAccountChartDrillEndMs] = useState<number | null>(null)
+  const [accountChartDrillLabel, setAccountChartDrillLabel] = useState('')
 
   const [editingFriend, setEditingFriend] = useState<User | null>(null)
   const [editFriendName, setEditFriendName] = useState('')
@@ -411,13 +517,53 @@ function App() {
   const isAuthenticated = !!authToken
 
   const [friendBalances, setFriendBalances] = useState<{ [friendId: string]: number }>({});
+  const dashboardPeriodMeta = getBudgetPeriodMeta(dashboardPeriod, new Date())
+  const dashboardBudgetStorageKey = `budget:${dashboardPeriod}:${currentUserId || 'guest'}:${dashboardPeriodMeta.storageToken}`
+  const budgetPeriodMeta = getBudgetPeriodMeta(selectedBudgetPeriod, new Date())
+  const budgetStorageKey = `budget:${selectedBudgetPeriod}:${currentUserId || 'guest'}:${budgetPeriodMeta.storageToken}`
 
   useEffect(() => {
     localStorage.setItem('theme', theme)
   }, [theme])
 
+  useEffect(() => {
+    const storedBudget = localStorage.getItem(dashboardBudgetStorageKey)
+    const parsedBudget = storedBudget ? Number(storedBudget) : 0
+    setDashboardBudgetAmount(Number.isFinite(parsedBudget) ? parsedBudget : 0)
+  }, [dashboardBudgetStorageKey])
+
+  useEffect(() => {
+    const storedBudget = localStorage.getItem(budgetStorageKey)
+    const parsedBudget = storedBudget ? Number(storedBudget) : 0
+    setBudgetAmount(Number.isFinite(parsedBudget) ? parsedBudget : 0)
+    setBudgetInput(storedBudget && Number.isFinite(parsedBudget) ? String(parsedBudget) : '')
+  }, [budgetStorageKey])
+
+  useEffect(() => {
+    setAccountChartDrillStartMs(null)
+    setAccountChartDrillEndMs(null)
+    setAccountChartDrillLabel('')
+  }, [selectedBudgetPeriod])
+
+  useEffect(() => {
+    if (!showQuickGroupChat || quickChatGroupId) return
+    const availableGroup = groups.find((group) => (group.memberIds || []).includes(currentUserId))
+    if (availableGroup) {
+      setQuickChatGroupId(availableGroup.id)
+    }
+  }, [showQuickGroupChat, quickChatGroupId, groups, currentUserId])
+
   function toggleTheme() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))
+  }
+
+  function handleSaveBudget(event: React.FormEvent) {
+    event.preventDefault()
+    const parsed = Number(budgetInput)
+    const sanitized = Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) / 100 : 0
+    localStorage.setItem(budgetStorageKey, String(sanitized))
+    setBudgetAmount(sanitized)
+    setBudgetInput(sanitized > 0 ? String(sanitized) : '')
   }
 
   const fetchUsers = React.useCallback(async () => {
@@ -1032,6 +1178,31 @@ const handleUnflagExpense = React.useCallback(async (expenseId: string) => {
     return equalShare(expense)
   }
 
+  function expenseAmountForCurrentUser(expense: Expense): number {
+    if (expense.type === 'GROUP' && (expense.participantIds || []).includes(currentUserId)) {
+      return userShare(expense)
+    }
+    if (expense.type === 'PERSONAL' && expense.payerId === currentUserId) {
+      return expense.amount
+    }
+    return 0
+  }
+
+  function isExpenseUnsettledForCurrentUser(expense: Expense): boolean {
+    const participants = expense.participantIds || []
+    const isShared = participants.length > 1
+    const userIsParticipant = participants.includes(currentUserId)
+    if (!isShared || !userIsParticipant) return false
+
+    // If you paid, expense is unsettled for you until everyone settles.
+    if (expense.payerId === currentUserId) {
+      return expense.expenseStatus !== 'Settled'
+    }
+
+    // If someone else paid and you're part of it, unsettled means you have not settled your share yet.
+    return !expense.settledByUser?.[currentUserId]
+  }
+
   function othersOweTotal(expense: Expense): number {
     return expense.amount - userShare(expense, expense.payerId)
   }
@@ -1062,15 +1233,6 @@ function remainingPercentage(): number {
     return u ? u.name : 'Unknown'
   }
 
-  function owesBreakdown(expense: Expense) {
-  return (expense.participantIds || [])
-    .filter(pid => pid !== expense.payerId)
-    .map(pid => {
-      const owes = expense.customSplits?.[pid] ?? equalShare(expense)
-      return { name: payerName(pid), owes, id: pid }
-    })
-}
-
 async function handleSettleUp(expenseId: string) {
   try {
     await authedFetch(`${API_BASE}/expenses/${expenseId}/settle?userId=${currentUserId}`, { method: 'POST' });
@@ -1082,6 +1244,535 @@ async function handleSettleUp(expenseId: string) {
   await fetchDashboardSummary();
   await fetchFriendBalances();
 }
+
+  function formatMoney(amount: number, currency: string = 'INR'): string {
+    return `${getCurrencySymbol(currency)}${amount.toFixed(2)}`
+  }
+
+  function getInitials(name: string): string {
+    return name
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || '')
+      .join('') || '?'
+  }
+
+  function inferExpenseCategory(description: string): string {
+    const text = description.toLowerCase()
+    if (/(food|drink|dinner|lunch|breakfast|coffee|cafe|restaurant|meal|snack|grocery)/.test(text)) return 'Food & Drinks'
+    if (/(shop|shopping|mall|cloth|dress|shoe|amazon|flipkart|gadget)/.test(text)) return 'Shopping'
+    if (/(travel|trip|flight|train|bus|cab|taxi|uber|ola|fuel|petrol|hotel)/.test(text)) return 'Travel'
+    if (/(movie|game|party|concert|netflix|spotify|fun|entertainment)/.test(text)) return 'Entertainment'
+    if (/(rent|bill|electric|water|wifi|internet|utility|fees)/.test(text)) return 'Bills'
+    return 'Others'
+  }
+
+  function getCategoryColor(index: number): string {
+    const colors = ['#6f42d9', '#3b82f6', '#d946b1', '#34d399', '#fbbf24', '#f97316']
+    return colors[index % colors.length]
+  }
+
+  function getOutstandingShareForParticipant(expense: Expense, participantId: string): number {
+    if (participantId === expense.payerId) return 0
+    if (expense.settledByUser?.[participantId]) return 0
+    return userShare(expense, participantId)
+  }
+
+  function getParticipantNetBalance(expenses: Expense[], participantId: string): number {
+    return expenses.reduce((net, expense) => {
+      const participants = expense.participantIds || []
+      if (!participants.includes(currentUserId) || !participants.includes(participantId)) return net
+
+      if (expense.payerId === currentUserId) {
+        return net + getOutstandingShareForParticipant(expense, participantId)
+      }
+
+      if (expense.payerId === participantId) {
+        return net - getOutstandingShareForParticipant(expense, currentUserId)
+      }
+
+      return net
+    }, 0)
+  }
+
+  function renderWorkspaceDashboard(config: {
+    title: string
+    subtitle: string
+    breadcrumb: string
+    expenses: Expense[]
+    participants: User[]
+    onBack: () => void
+    onAddExpense: () => void
+    emptyTitle: string
+    emptyBody: string
+    scopeLabel: string
+    mode: 'group' | 'friend'
+    primaryParticipantId?: string
+    accentLabel?: string
+    groupChatId?: string
+  }) {
+    const {
+      title,
+      subtitle,
+      breadcrumb,
+      expenses,
+      participants,
+      onBack,
+      onAddExpense,
+      emptyTitle,
+      emptyBody,
+      scopeLabel,
+      mode,
+      primaryParticipantId,
+      accentLabel,
+      groupChatId,
+    } = config
+
+    const workspaceSearch = workspaceExpenseSearch.trim().toLowerCase()
+    const now = Date.now()
+    const dateWindowMap: Record<'ALL' | '7_DAYS' | '30_DAYS' | '90_DAYS', number> = {
+      ALL: 0,
+      '7_DAYS': 7,
+      '30_DAYS': 30,
+      '90_DAYS': 90,
+    }
+
+    const filteredExpenses = expenses.filter((expense) => {
+      const matchesSearch = !workspaceSearch
+        || expense.description.toLowerCase().includes(workspaceSearch)
+        || payerName(expense.payerId).toLowerCase().includes(workspaceSearch)
+
+      const matchesStatus = workspaceExpenseStatusFilter === 'ALL'
+        || (workspaceExpenseStatusFilter === 'SETTLED' && expense.expenseStatus === 'Settled')
+        || (workspaceExpenseStatusFilter === 'UNSETTLED' && expense.expenseStatus !== 'Settled')
+
+      const days = dateWindowMap[workspaceExpenseDateFilter]
+      const createdAtMs = expense.createdAt ? new Date(expense.createdAt).getTime() : 0
+      const matchesDate = !days || !createdAtMs || now - createdAtMs <= days * 24 * 60 * 60 * 1000
+
+      return matchesSearch && matchesStatus && matchesDate
+    })
+
+    const totalSpent = expenses.reduce((sum, expense) => sum + expense.amount, 0)
+    const youSpent = expenses
+      .filter((expense) => expense.payerId === currentUserId)
+      .reduce((sum, expense) => sum + expense.amount, 0)
+
+    const payerTotals = participants
+      .map((participant) => ({
+        id: participant.id,
+        name: participant.id === currentUserId ? 'You' : participant.name,
+        total: expenses
+          .filter((expense) => expense.payerId === participant.id)
+          .reduce((sum, expense) => sum + expense.amount, 0),
+      }))
+      .filter((entry) => entry.total > 0)
+      .sort((a, b) => b.total - a.total)
+
+    const categoryTotals = Object.entries(
+      expenses.reduce<Record<string, number>>((acc, expense) => {
+        const category = inferExpenseCategory(expense.description)
+        acc[category] = (acc[category] || 0) + expense.amount
+        return acc
+      }, {})
+    )
+      .map(([label, total]) => ({ label, total }))
+      .sort((a, b) => b.total - a.total)
+
+    const settledCount = expenses.filter((expense) => expense.expenseStatus === 'Settled').length
+    const unsettledCount = expenses.length - settledCount
+
+    const participantBalances = participants
+      .filter((participant) => participant.id !== currentUserId)
+      .map((participant) => ({
+        id: participant.id,
+        name: participant.name,
+        initials: getInitials(participant.name),
+        amount: getParticipantNetBalance(expenses, participant.id),
+      }))
+      .filter((entry) => Math.abs(entry.amount) > 0.009)
+      .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+
+    const netBalance = participantBalances.reduce((sum, entry) => sum + entry.amount, 0)
+    const selectedWorkspaceExpense = expenseDetailView && expenses.some((expense) => expense.id === expenseDetailView.id)
+      ? expenseDetailView
+      : null
+    const selectedCanSettle = !!(
+      selectedWorkspaceExpense
+      && selectedWorkspaceExpense.payerId !== currentUserId
+      && (selectedWorkspaceExpense.participantIds || []).includes(currentUserId)
+      && !selectedWorkspaceExpense.settledByUser?.[currentUserId]
+    )
+
+    const focusParticipant = primaryParticipantId
+      ? participants.find((participant) => participant.id === primaryParticipantId) || null
+      : null
+    const secondarySpent = focusParticipant
+      ? expenses.filter((expense) => expense.payerId === focusParticipant.id).reduce((sum, expense) => sum + expense.amount, 0)
+      : Math.max(0, totalSpent - youSpent)
+    const balanceDescriptor = netBalance > 0.009
+      ? `You are owed ${formatMoney(netBalance)}`
+      : netBalance < -0.009
+      ? `You owe ${formatMoney(Math.abs(netBalance))}`
+      : 'All balances are settled'
+
+    const balanceCardNote = focusParticipant
+      ? netBalance > 0.009
+        ? `${focusParticipant.name} owes you`
+        : netBalance < -0.009
+        ? `You owe ${focusParticipant.name}`
+        : `Nothing pending with ${focusParticipant.name}`
+      : netBalance > 0.009
+      ? 'Overall you are owed by the group'
+      : netBalance < -0.009
+      ? 'Overall you owe the group'
+      : 'Nothing pending in this group'
+
+    const topSettlement = participantBalances[0] || null
+
+    return (
+      <section className="workspace-shell">
+        <div className="workspace-header">
+          <div className="workspace-heading">
+            <div className="workspace-breadcrumb-row">
+              <button type="button" className="workspace-back-btn" onClick={onBack}>← Back</button>
+              <div>
+                <p className="workspace-breadcrumb">{breadcrumb}</p>
+                <h2>{title}</h2>
+                <p className="workspace-subtitle">{subtitle}</p>
+              </div>
+            </div>
+          </div>
+          <div className="workspace-header-actions">
+            <button type="button" className="workspace-primary-btn" onClick={onAddExpense}>+ Add Expense</button>
+          </div>
+        </div>
+
+        <div className="workspace-stat-grid">
+          <article className="workspace-stat-card">
+            <div className="workspace-stat-icon workspace-stat-icon-purple">□</div>
+            <div>
+              <span className="workspace-stat-label">Total Spent</span>
+              <strong className="workspace-stat-value">{formatMoney(totalSpent)}</strong>
+              <span className="workspace-stat-note">All time</span>
+            </div>
+          </article>
+          <article className="workspace-stat-card">
+            <div className="workspace-stat-icon workspace-stat-icon-blue">▣</div>
+            <div>
+              <span className="workspace-stat-label">You Spent</span>
+              <strong className="workspace-stat-value">{formatMoney(youSpent)}</strong>
+              <span className="workspace-stat-note">
+                {totalSpent > 0 ? `${((youSpent / totalSpent) * 100).toFixed(1)}% of total` : 'No spends yet'}
+              </span>
+            </div>
+          </article>
+          <article className="workspace-stat-card">
+            <div className="workspace-stat-icon workspace-stat-icon-pink">◌</div>
+            <div>
+              <span className="workspace-stat-label">{accentLabel || (focusParticipant ? `${focusParticipant.name} Spent` : 'Others Spent')}</span>
+              <strong className="workspace-stat-value">{formatMoney(secondarySpent)}</strong>
+              <span className="workspace-stat-note">
+                {totalSpent > 0 ? `${((secondarySpent / totalSpent) * 100).toFixed(1)}% of total` : 'No spends yet'}
+              </span>
+            </div>
+          </article>
+          <article className="workspace-stat-card">
+            <div className={`workspace-stat-icon ${netBalance < -0.009 ? 'workspace-stat-icon-amber' : 'workspace-stat-icon-green'}`}>◍</div>
+            <div>
+              <span className="workspace-stat-label">Your Balance</span>
+              <strong className={`workspace-stat-value ${netBalance < -0.009 ? 'negative' : netBalance > 0.009 ? 'positive' : ''}`}>
+                {netBalance > 0.009 ? '+' : netBalance < -0.009 ? '-' : ''}{formatMoney(Math.abs(netBalance))}
+              </strong>
+              <span className="workspace-stat-note">{balanceCardNote}</span>
+            </div>
+          </article>
+          <article className="workspace-stat-card">
+            <div className="workspace-stat-icon workspace-stat-icon-green">✓</div>
+            <div>
+              <span className="workspace-stat-label">{mode === 'friend' ? 'Shared Settled' : 'Group Settled'}</span>
+              <strong className="workspace-stat-value">{settledCount} of {expenses.length}</strong>
+              <span className="workspace-stat-note">{unsettledCount} still open</span>
+            </div>
+          </article>
+        </div>
+
+        <div className="workspace-insight-grid">
+          <section className="workspace-panel workspace-panel-wide">
+            <div className="workspace-panel-head">
+              <h3>Spending Overview</h3>
+              <span className="workspace-panel-badge">All time</span>
+            </div>
+            <div className="workspace-chart-card">
+              <div
+                className="workspace-donut"
+                style={{
+                  background: payerTotals.length
+                    ? `conic-gradient(${payerTotals
+                      .map((entry, index, array) => {
+                        const start = array.slice(0, index).reduce((sum, item) => sum + item.total, 0)
+                        const end = start + entry.total
+                        const startPct = totalSpent ? (start / totalSpent) * 100 : 0
+                        const endPct = totalSpent ? (end / totalSpent) * 100 : 0
+                        return `${getCategoryColor(index)} ${startPct}% ${endPct}%`
+                      })
+                      .join(', ')})`
+                    : '#1d1c33',
+                }}
+              >
+                <div className="workspace-donut-center">
+                  <strong>{formatMoney(totalSpent)}</strong>
+                  <span>Total</span>
+                </div>
+              </div>
+              <div className="workspace-legend">
+                {payerTotals.length === 0 ? (
+                  <div className="muted">No spending data yet.</div>
+                ) : (
+                  payerTotals.map((entry, index) => (
+                    <div key={entry.id} className="workspace-legend-item">
+                      <span className="workspace-legend-dot" style={{ background: getCategoryColor(index) }} />
+                      <div>
+                        <strong>{entry.name}</strong>
+                        <span>{formatMoney(entry.total)} ({totalSpent ? ((entry.total / totalSpent) * 100).toFixed(1) : '0.0'}%)</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className="workspace-panel">
+            <div className="workspace-panel-head">
+              <h3>Settlement Summary</h3>
+            </div>
+            <div className="workspace-settlement-card">
+              <p className="workspace-settlement-eyebrow">{scopeLabel}</p>
+              <strong className={`workspace-settlement-amount ${netBalance < -0.009 ? 'negative' : netBalance > 0.009 ? 'positive' : ''}`}>
+                {balanceDescriptor}
+              </strong>
+              <div className="workspace-settlement-flow">
+                <div className="workspace-avatar-badge">{getInitials(currentUserName)}</div>
+                <div className="workspace-settlement-line">
+                  <span>{topSettlement ? (topSettlement.amount > 0 ? 'is owed by' : 'owes') : 'settled with'}</span>
+                </div>
+                <div className="workspace-avatar-badge workspace-avatar-badge-secondary">
+                  {topSettlement ? topSettlement.initials : (focusParticipant ? getInitials(focusParticipant.name) : 'GR')}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="workspace-primary-btn workspace-primary-btn-full"
+                onClick={() => {
+                  if (selectedWorkspaceExpense) {
+                    handleSettleUp(selectedWorkspaceExpense.id)
+                  }
+                }}
+                disabled={!selectedCanSettle}
+              >
+                Settle Up
+              </button>
+              {!selectedCanSettle && (
+                <span className="workspace-helper-text">Select an expense you owe to settle it from here.</span>
+              )}
+              {participantBalances.length > 0 && (
+                <div className="workspace-balance-stack">
+                  {participantBalances.slice(0, 3).map((entry) => (
+                    <div key={entry.id} className="workspace-balance-row">
+                      <span>{entry.name}</span>
+                      <strong className={entry.amount >= 0 ? 'positive' : 'negative'}>
+                        {entry.amount >= 0 ? '+' : '-'}{formatMoney(Math.abs(entry.amount))}
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="workspace-panel">
+            <div className="workspace-panel-head">
+              <h3>Top Categories</h3>
+              <span className="workspace-panel-badge">All time</span>
+            </div>
+            <div className="workspace-chart-card workspace-chart-card-compact">
+              <div
+                className="workspace-donut workspace-donut-small"
+                style={{
+                  background: categoryTotals.length
+                    ? `conic-gradient(${categoryTotals
+                      .map((entry, index, array) => {
+                        const start = array.slice(0, index).reduce((sum, item) => sum + item.total, 0)
+                        const end = start + entry.total
+                        const startPct = totalSpent ? (start / totalSpent) * 100 : 0
+                        const endPct = totalSpent ? (end / totalSpent) * 100 : 0
+                        return `${getCategoryColor(index)} ${startPct}% ${endPct}%`
+                      })
+                      .join(', ')})`
+                    : '#1d1c33',
+                }}
+              >
+                <div className="workspace-donut-center">
+                  <strong>{categoryTotals.length}</strong>
+                  <span>Types</span>
+                </div>
+              </div>
+              <div className="workspace-legend">
+                {categoryTotals.length === 0 ? (
+                  <div className="muted">No categories yet.</div>
+                ) : (
+                  categoryTotals.slice(0, 5).map((entry, index) => (
+                    <div key={entry.label} className="workspace-legend-item">
+                      <span className="workspace-legend-dot" style={{ background: getCategoryColor(index) }} />
+                      <div>
+                        <strong>{entry.label}</strong>
+                        <span>{formatMoney(entry.total)} ({totalSpent ? ((entry.total / totalSpent) * 100).toFixed(1) : '0.0'}%)</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <section className="workspace-panel workspace-table-panel">
+          <div className="workspace-toolbar">
+            <div className="workspace-toolbar-filters">
+              <input
+                type="text"
+                value={workspaceExpenseSearch}
+                onChange={(event) => setWorkspaceExpenseSearch(event.target.value)}
+                placeholder="Search expenses..."
+              />
+              <select
+                value={workspaceExpenseStatusFilter}
+                onChange={(event) => setWorkspaceExpenseStatusFilter(event.target.value as 'ALL' | 'SETTLED' | 'UNSETTLED')}
+              >
+                <option value="ALL">All expenses</option>
+                <option value="UNSETTLED">Unsettled</option>
+                <option value="SETTLED">Settled</option>
+              </select>
+              <select
+                value={workspaceExpenseDateFilter}
+                onChange={(event) => setWorkspaceExpenseDateFilter(event.target.value as 'ALL' | '7_DAYS' | '30_DAYS' | '90_DAYS')}
+              >
+                <option value="ALL">All dates</option>
+                <option value="7_DAYS">Last 7 days</option>
+                <option value="30_DAYS">Last 30 days</option>
+                <option value="90_DAYS">Last 90 days</option>
+              </select>
+            </div>
+            <button type="button" className="workspace-primary-btn" onClick={onAddExpense}>+ Add Expense</button>
+          </div>
+
+          {filteredExpenses.length === 0 ? (
+            <div className="expenses-empty-state workspace-empty-state">
+              <strong>{emptyTitle}</strong>
+              <span>{emptyBody}</span>
+            </div>
+          ) : (
+            <div className="workspace-table-wrap">
+              <table className="workspace-table">
+                <thead>
+                  <tr>
+                    <th>Expense</th>
+                    <th>Amount</th>
+                    <th>Paid By</th>
+                    <th>{mode === 'friend' ? 'Balance' : 'You Owe'}</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredExpenses.map((expense, index) => {
+                    const isSelected = selectedWorkspaceExpense?.id === expense.id
+                    const youOwe = expense.payerId !== currentUserId
+                      && (expense.participantIds || []).includes(currentUserId)
+                      && !expense.settledByUser?.[currentUserId]
+                    const owedByOthers = expense.payerId === currentUserId && expense.expenseStatus !== 'Settled'
+                    const statusLabel = expense.expenseStatus || 'Unsettled'
+
+                    return (
+                      <tr
+                        key={expense.id}
+                        className={isSelected ? 'workspace-table-row workspace-table-row-active' : 'workspace-table-row'}
+                        onClick={() => setExpenseDetailView(expense)}
+                      >
+                        <td>
+                          <div className="workspace-expense-cell">
+                            <div className="workspace-expense-icon" style={{ background: getCategoryColor(index) }}>
+                              {inferExpenseCategory(expense.description).charAt(0)}
+                            </div>
+                            <div>
+                              <strong>{expense.description}</strong>
+                              <span>
+                                {expense.createdAt ? new Date(expense.createdAt).toLocaleDateString() : 'No date'} · {shareLabel(expense)}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <strong>{formatMoney(expense.amount, expense.currency)}</strong>
+                          <span>{expense.currency}</span>
+                        </td>
+                        <td>{payerName(expense.payerId)}</td>
+                        <td>
+                          {youOwe && (
+                            <strong className="negative">-{formatMoney(userShare(expense), expense.currency)}</strong>
+                          )}
+                          {owedByOthers && (
+                            <strong className="positive">+{formatMoney(othersOweTotal(expense), expense.currency)}</strong>
+                          )}
+                          {!youOwe && !owedByOthers && <span>-</span>}
+                        </td>
+                        <td>
+                          <span className={statusLabel === 'Settled' ? 'workspace-status-pill workspace-status-pill-settled' : 'workspace-status-pill workspace-status-pill-unsettled'}>
+                            {statusLabel}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        {mode === 'group' && groupChatId && (
+          <section className="workspace-panel workspace-chat-panel">
+            <div className="workspace-panel-head">
+              <h3>Group Chat</h3>
+            </div>
+            <div className="expense-chat-panel">
+              <div className="expense-chat-messages">
+                {(groupChats[groupChatId] || []).length === 0 && <div className="muted">No messages yet.</div>}
+                {(groupChats[groupChatId] || []).map((msg, idx) => (
+                  <div key={idx} className="expense-chat-message">
+                    <span className={msg.user === currentUserName ? 'expense-chat-user expense-chat-user-self' : 'expense-chat-user'}>{msg.user}</span>
+                    <span>{msg.message}</span>
+                    <div className="muted" style={{ fontSize: '0.7rem' }}>{new Date(msg.timestamp).toLocaleTimeString()}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="expense-chat-composer">
+                <input
+                  type="text"
+                  value={groupChatInputs[groupChatId] || ''}
+                  onChange={(event) => setGroupChatInputs((prev) => ({ ...prev, [groupChatId]: event.target.value }))}
+                  placeholder="Type a message..."
+                  onKeyDown={(event) => { if (event.key === 'Enter') handleSendGroupChatMessage(groupChatId) }}
+                />
+                <button type="button" onClick={() => handleSendGroupChatMessage(groupChatId)} disabled={!(groupChatInputs[groupChatId]?.trim())}>Send</button>
+              </div>
+            </div>
+          </section>
+        )}
+      </section>
+    )
+  }
 
   function getActivityCategory(activity: Activity): Exclude<ActivityFilter, 'ALL'> {
     const description = activity.description.toLowerCase()
@@ -1210,41 +1901,84 @@ async function handleSettleUp(expenseId: string) {
     return merged
   })()
 
-  const monthlyTrend = (() => {
+  const dashboardAnalytics = (() => {
     const now = new Date()
-    const buckets = Array.from({ length: 6 }, (_, idx) => {
-      const date = new Date(now.getFullYear(), now.getMonth() - (5 - idx), 1)
-      return {
-        key: `${date.getFullYear()}-${date.getMonth()}`,
-        label: date.toLocaleString('default', { month: 'short' }),
-        total: 0,
-      }
+    const periodMeta = getBudgetPeriodMeta(dashboardPeriod, now)
+    const rangeStart = periodMeta.rangeStart
+    const rangeEnd = periodMeta.rangeEnd
+    const expensesInRange = dashboardExpensePool.filter((expense) => {
+      if (!expense.createdAt) return false
+      const createdAt = new Date(expense.createdAt)
+      return createdAt >= rangeStart && createdAt < rangeEnd
     })
 
-    dashboardExpensePool.forEach((expense) => {
+    type TrendBucket = { key: string; label: string; total: number; start: Date; end: Date }
+    const buckets: TrendBucket[] = []
+    const cursor = new Date(rangeStart)
+    let weekIndex = 1
+    while (cursor < rangeEnd) {
+      const start = new Date(cursor)
+      const end = new Date(cursor)
+      let label = ''
+      if (dashboardPeriod === 'DAILY') {
+        end.setHours(end.getHours() + 1)
+        label = `${String(start.getHours()).padStart(2, '0')}:00`
+      } else if (dashboardPeriod === 'WEEKLY' || dashboardPeriod === 'MONTHLY') {
+        end.setDate(end.getDate() + 1)
+        label = dashboardPeriod === 'WEEKLY'
+          ? start.toLocaleDateString(undefined, { weekday: 'short' })
+          : String(start.getDate())
+      } else if (dashboardPeriod === 'QUARTERLY') {
+        end.setDate(end.getDate() + 7)
+        label = `W${weekIndex}`
+        weekIndex += 1
+      } else {
+        end.setMonth(end.getMonth() + 1)
+        label = start.toLocaleDateString(undefined, { month: 'short' })
+      }
+      if (end > rangeEnd) end.setTime(rangeEnd.getTime())
+      buckets.push({ key: `${start.toISOString()}-${dashboardPeriod}`, label, total: 0, start, end })
+      cursor.setTime(end.getTime())
+    }
+
+    expensesInRange.forEach((expense) => {
       if (!expense.createdAt) return
       const expenseDate = new Date(expense.createdAt)
-      const key = `${expenseDate.getFullYear()}-${expenseDate.getMonth()}`
-      const bucket = buckets.find((entry) => entry.key === key)
-      if (!bucket) return
-
-      if (expense.type === 'GROUP' && (expense.participantIds || []).includes(currentUserId)) {
-        bucket.total += userShare(expense)
-      } else if (expense.type === 'PERSONAL' && expense.payerId === currentUserId) {
-        bucket.total += expense.amount
-      }
+      const amount = expenseAmountForCurrentUser(expense)
+      if (amount <= 0) return
+      const bucket = buckets.find((entry) => expenseDate >= entry.start && expenseDate < entry.end)
+      if (bucket) bucket.total += amount
     })
 
+    const spent = expensesInRange.reduce((sum, expense) => sum + expenseAmountForCurrentUser(expense), 0)
     const max = Math.max(...buckets.map((item) => item.total), 1)
-    return { buckets, max }
-  })()
+    const trendSubLabel = dashboardPeriod === 'DAILY'
+      ? 'By hour'
+      : dashboardPeriod === 'WEEKLY'
+      ? 'This week by day'
+      : dashboardPeriod === 'MONTHLY'
+      ? 'This month by day'
+      : dashboardPeriod === 'QUARTERLY'
+      ? 'This quarter by week'
+      : 'This year by month'
 
+    return {
+      spent,
+      trendSubLabel,
+      periodMeta,
+      buckets,
+      max,
+    }
+  })()
 
   const expenseMix = (() => {
     let personal = 0
     let group = 0
 
     dashboardExpensePool.forEach((expense) => {
+      if (!expense.createdAt) return
+      const createdAt = new Date(expense.createdAt)
+      if (createdAt < dashboardAnalytics.periodMeta.rangeStart || createdAt >= dashboardAnalytics.periodMeta.rangeEnd) return
       if (expense.type === 'GROUP' && (expense.participantIds || []).includes(currentUserId)) {
         group += userShare(expense)
       } else if (expense.type === 'PERSONAL' && expense.payerId === currentUserId) {
@@ -1264,6 +1998,11 @@ async function handleSettleUp(expenseId: string) {
       groupPct,
     }
   })()
+
+  const dashboardBudgetRemaining = dashboardBudgetAmount - dashboardAnalytics.spent
+  const dashboardBudgetProgress = dashboardBudgetAmount > 0
+    ? Math.min((dashboardAnalytics.spent / dashboardBudgetAmount) * 100, 100)
+    : 0
 
   function formatRelativeTime(iso?: string) {
     if (!iso) return ''
@@ -1309,6 +2048,7 @@ async function handleSettleUp(expenseId: string) {
     { key: 'ALL', label: 'All', count: nonRecurringExpenses.length },
     { key: 'PERSONAL', label: 'Personal', count: nonRecurringExpenses.filter((expense) => expense.type === 'PERSONAL').length },
     { key: 'GROUP', label: 'Group', count: nonRecurringExpenses.filter((expense) => expense.type === 'GROUP').length },
+    { key: 'UNSETTLED', label: 'Unsettled', count: nonRecurringExpenses.filter((expense) => isExpenseUnsettledForCurrentUser(expense)).length },
     { key: 'RECURRING', label: 'Recurring', count: recurringTemplates.length },
     { key: 'FLAGGED', label: 'Flagged', count: flaggedExpenses.length },
   ]
@@ -1319,6 +2059,8 @@ async function handleSettleUp(expenseId: string) {
         return expense.type === 'PERSONAL' && !(expense.isRecurring || expense.recurring)
       case 'GROUP':
         return expense.type === 'GROUP' && !(expense.isRecurring || expense.recurring)
+      case 'UNSETTLED':
+        return isExpenseUnsettledForCurrentUser(expense) && !(expense.isRecurring || expense.recurring)
       case 'RECURRING':
         return !!(expense.isRecurring || expense.recurring)
       case 'FLAGGED':
@@ -1526,7 +2268,7 @@ async function handleSettleUp(expenseId: string) {
           <h1 style={{ margin: 0 }}>Finwise</h1>
         </div>
         <div className="header-center">
-          {['Groups', 'Friends', 'Activity'].includes(activeTab) && !groupDetailView && (
+          {['Groups', 'Friends', 'Activity'].includes(activeTab) && !groupDetailView && !friendDetailView && (
             <input
               type="text"
               className="search-input"
@@ -1599,7 +2341,12 @@ async function handleSettleUp(expenseId: string) {
                 <button
                   key={tab}
                   className={activeTab === tab ? 'sidebar-tab sidebar-tab-active' : 'sidebar-tab'}
-                  onClick={() => { setActiveTab(tab as typeof activeTab); setGroupDetailView(null) }}
+                  onClick={() => {
+                    setActiveTab(tab as typeof activeTab)
+                    setGroupDetailView(null)
+                    setFriendDetailView(null)
+                    setExpenseDetailView(null)
+                  }}
                 >
                   <span className="sidebar-tab-icon" aria-hidden="true">{getSidebarIcon(tab as typeof activeTab)}</span>
                   <span>{tab.charAt(0).toUpperCase() + tab.slice(1)}</span>
@@ -1667,12 +2414,21 @@ async function handleSettleUp(expenseId: string) {
                 <div>
                   <p className="dashboard-breadcrumb">Finwise / Dashboard</p>
                   <h2>{greeting}, {currentUser.name}</h2>
-                  <p className="dashboard-subtitle">{dashboardDateLabel} - here is your financial snapshot</p>
+                  <p className="dashboard-subtitle">{dashboardDateLabel} - here is your {dashboardPeriodMeta.titleLabel.toLowerCase()} financial snapshot</p>
                 </div>
                 <div className="dashboard-range">
-                  <button className="range-pill range-pill-active" type="button">This month</button>
-                  <button className="range-pill" type="button">Quarter</button>
-                  <button className="range-pill" type="button">Year</button>
+                  <label className="field-label" style={{ margin: 0 }}>Analytics period</label>
+                  <select
+                    value={dashboardPeriod}
+                    onChange={(e) => setDashboardPeriod(e.target.value as BudgetPeriod)}
+                    style={{ minWidth: 170 }}
+                  >
+                    <option value="DAILY">Daily</option>
+                    <option value="WEEKLY">Weekly</option>
+                    <option value="MONTHLY">Monthly</option>
+                    <option value="QUARTERLY">Quarterly</option>
+                    <option value="YEARLY">Yearly</option>
+                  </select>
                 </div>
               </div>
 
@@ -1699,16 +2455,22 @@ async function handleSettleUp(expenseId: string) {
                     </article>
                     <article className="panel dashboard-stat-card">
                       <span className="dashboard-stat-label">Total spent</span>
-                      <strong className="dashboard-stat-value">{getCurrencySymbol('INR')}{dashboardSummary.spentThisMonth.toFixed(2)}</strong>
-                      <span className="dashboard-stat-note">{groups.length} groups, {currentFriends.length} friends</span>
+                      <strong className="dashboard-stat-value">{getCurrencySymbol('INR')}{dashboardAnalytics.spent.toFixed(2)}</strong>
+                      <span className="dashboard-stat-note">
+                        {dashboardBudgetAmount > 0
+                          ? `${dashboardBudgetProgress.toFixed(0)}% of ${dashboardPeriodMeta.titleLabel.toLowerCase()} budget used`
+                          : `No ${dashboardPeriodMeta.titleLabel.toLowerCase()} budget set`}
+                      </span>
                     </article>
                     <article className="panel dashboard-stat-card">
-                      <span className="dashboard-stat-label">Net balance</span>
-                      <strong className={`dashboard-stat-value ${dashboardSummary.netBalance >= 0 ? 'positive' : 'negative'}`}>
-                        {dashboardSummary.netBalance >= 0 ? '+' : '-'}{getCurrencySymbol('INR')}{Math.abs(dashboardSummary.netBalance).toFixed(2)}
+                      <span className="dashboard-stat-label">{dashboardPeriodMeta.titleLabel} budget</span>
+                      <strong className={`dashboard-stat-value ${dashboardBudgetRemaining >= 0 ? 'positive' : 'negative'}`}>
+                        {dashboardBudgetRemaining >= 0 ? '' : '-'}{getCurrencySymbol('INR')}{Math.abs(dashboardBudgetRemaining).toFixed(2)}
                       </strong>
                       <span className="dashboard-stat-note">
-                        {dashboardSummary.netBalance >= 0 ? 'You are in the green' : 'You owe more than you are owed'}
+                        {dashboardBudgetAmount > 0
+                          ? `${getCurrencySymbol('INR')}${dashboardBudgetAmount.toFixed(2)} budget for ${dashboardAnalytics.periodMeta.label}`
+                          : `Set budget in Account for ${dashboardAnalytics.periodMeta.label}`}
                       </span>
                     </article>
                   </div>
@@ -1717,14 +2479,14 @@ async function handleSettleUp(expenseId: string) {
                     <article className="panel dashboard-trend-panel">
                       <div className="dashboard-panel-head">
                         <h3>Spending trend</h3>
-                        <span className="muted">Last 6 months</span>
+                        <span className="muted">{dashboardAnalytics.trendSubLabel}</span>
                       </div>
                       <div className="dashboard-trend-chart">
-                        {monthlyTrend.buckets.map((bucket) => (
+                        {dashboardAnalytics.buckets.map((bucket) => (
                           <div key={bucket.key} className="dashboard-trend-col">
                             <div
                               className="dashboard-trend-bar"
-                              style={{ height: `${Math.max((bucket.total / monthlyTrend.max) * 100, bucket.total > 0 ? 8 : 0)}%` }}
+                              style={{ height: `${Math.max((bucket.total / dashboardAnalytics.max) * 100, bucket.total > 0 ? 8 : 0)}%` }}
                               title={`${bucket.label}: ${getCurrencySymbol('INR')}${bucket.total.toFixed(2)}`}
                             />
                             <span>{bucket.label}</span>
@@ -1849,7 +2611,7 @@ async function handleSettleUp(expenseId: string) {
             </section>
           )}
 
-          {activeTab === 'Friends' && (
+          {activeTab === 'Friends' && !friendDetailView && (
             <>
               <section className="friends-shell">
                 <div className="friends-hero panel">
@@ -1942,7 +2704,7 @@ async function handleSettleUp(expenseId: string) {
                 ) : (
                   <ul className="friends-list">
                     {currentFriends.map((f) => (
-                      <li key={f.id} className="friends-list-row">
+                      <li key={f.id} className="friends-list-row" onClick={() => { setFriendDetailView(f.id); setExpenseDetailView(null) }} style={{ cursor: 'pointer' }}>
                         <div className="friends-person">
                           <div className="friends-avatar">{f.name.slice(0, 2).toUpperCase()}</div>
                           <div className="friends-person-meta">
@@ -1962,7 +2724,8 @@ async function handleSettleUp(expenseId: string) {
                             {friendBalances[f.id] < 0 ? (
                               <button
                                 className="accept-btn"
-                                onClick={async () => {
+                                onClick={async (event) => {
+                                  event.stopPropagation()
                                   await authedFetch(`${API_BASE}/expenses/settle-with-friend?userId=${currentUserId}&friendId=${f.id}`, { method: 'POST' })
                                   await fetchFriendBalances()
                                   await fetchDashboardSummary()
@@ -1972,10 +2735,10 @@ async function handleSettleUp(expenseId: string) {
                                 Settle
                               </button>
                             ) : friendBalances[f.id] > 0 ? (
-                              <button className="decline-btn friends-remind-btn">Remind</button>
+                              <button className="decline-btn friends-remind-btn" onClick={(event) => event.stopPropagation()}>Remind</button>
                             ) : null}
-                            <button className="icon-btn" title="Edit" onClick={() => startEditFriend(f)}>Edit</button>
-                            <button className="icon-btn danger" title="Remove" onClick={() => handleRemoveFriend(f.id)}>Remove</button>
+                            <button className="icon-btn" title="Edit" onClick={(event) => { event.stopPropagation(); startEditFriend(f) }}>Edit</button>
+                            <button className="icon-btn danger" title="Remove" onClick={(event) => { event.stopPropagation(); handleRemoveFriend(f.id) }}>Remove</button>
                           </div>
                         </div>
                       </li>
@@ -2006,6 +2769,51 @@ async function handleSettleUp(expenseId: string) {
               )}
             </>
           )}
+
+          {activeTab === 'Friends' && friendDetailView && (() => {
+            const friend = users.find((user) => user.id === friendDetailView) || null
+            const friendPairExpenses = expenseWorkspacePool
+              .filter((expense) => {
+                const participants = expense.participantIds || []
+                return (
+                  expense.type === 'GROUP'
+                  && participants.length === 2
+                  && participants.includes(currentUserId)
+                  && participants.includes(friendDetailView)
+                )
+              })
+              .sort((a, b) => {
+                const da = a.createdAt ? new Date(a.createdAt).getTime() : 0
+                const db = b.createdAt ? new Date(b.createdAt).getTime() : 0
+                return db - da
+              })
+            const unsettledCount = friendPairExpenses.filter((expense) => isExpenseUnsettledForCurrentUser(expense)).length
+
+            return (
+              renderWorkspaceDashboard({
+                title: friend ? `${currentUser?.name || 'You'} & ${friend.name}` : 'Friend workspace',
+                subtitle: `${friendPairExpenses.length} shared expenses · ${unsettledCount} unsettled`,
+                breadcrumb: 'Finwise / Friends / Workspace',
+                expenses: friendPairExpenses,
+                participants: [currentUser, friend].filter(Boolean) as User[],
+                onBack: () => { setFriendDetailView(null); setExpenseDetailView(null) },
+                onAddExpense: () => {
+                  resetExpenseForm()
+                  setEditingExpense(null)
+                  setIsFriendExpense(true)
+                  setIsGroupExpense(false)
+                  setSelectedFriendId(friendDetailView)
+                  setShowExpenseModal(true)
+                },
+                emptyTitle: 'No shared expenses yet.',
+                emptyBody: `Add an expense to start tracking with ${friend?.name || 'this friend'}.`,
+                scopeLabel: friend ? `Balances with ${friend.name}` : 'Balances in this workspace',
+                mode: 'friend',
+                primaryParticipantId: friend?.id,
+                accentLabel: friend ? `${friend.name} Spent` : 'Friend Spent',
+              })
+            )
+          })()}
 
           {false && activeTab === 'Friends' && (
             <>
@@ -2461,95 +3269,30 @@ async function handleSettleUp(expenseId: string) {
               const db = b.createdAt ? new Date(b.createdAt).getTime() : 0
               return db - da
             })
+            const groupUnsettled = sorted.filter((expense) => expense.expenseStatus !== 'Settled').length
             return (
-              <section className="panel">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-                  <button className="icon-btn" onClick={() => setGroupDetailView(null)}>← Back</button>
-                  <h2 style={{ margin: 0 }}>{grp?.name || 'Group'} — Expenses</h2>
-                </div>
-                <ul className="card-list">
-                  {sorted.map((e) => (
-                    <li key={e.id} className="card" style={{ cursor: 'pointer' }} onClick={() => setExpenseDetailView(e)}>
-                      <div className="card-header">
-                        <strong>{e.description}</strong>
-                        <div style={{ textAlign: 'right' }}>
-                          <span>{getCurrencySymbol(e.currency)}{e.amount.toFixed(2)} ({e.currency})</span>
-                          {e.createdAt && <div className="muted" style={{ fontSize: '.75rem' }}>{new Date(e.createdAt).toLocaleString()}</div>}
-                        </div>
-                      </div>
-                      <div className="card-body">
-                        <div className="paid-by">Paid by <strong>{payerName(e.payerId)}</strong></div>
-                        <div>{shareLabel(e)}{!e.customSplits && ` (${(e.participantIds || []).length} participants)`}</div>
-                        {owesBreakdown(e).length > 0 && (
-                          <div className="breakdown-list" style={{ margin: '6px 0', padding: '4px 0', borderTop: '1px solid #333' }}>
-                            <strong style={{ fontSize: '.85rem' }}>Who owes what:</strong>
-                            {owesBreakdown(e).map((entry) => (
-                              <div key={entry.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.85rem', padding: '2px 0' }}>
-                                <span>{entry.id === currentUserId ? 'You' : entry.name}</span>
-                                <span>{getCurrencySymbol(e.currency)}{entry.owes.toFixed(2)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {/* Non-payer: you owe */}
-                        {e.payerId !== currentUserId && (e.participantIds || []).includes(currentUserId) && (
-  e.settledByUser?.[currentUserId] ? (
-    <div className="settled-text">✓ Settled up</div>
-  ) : (
-    <div className="owes-row">
-      <span className="owes-amount">You owe <strong>{getCurrencySymbol(e.currency)}{userShare(e).toFixed(2)}</strong></span>
-      <button className="settle-btn" onClick={ev => { ev.stopPropagation(); handleSettleUp(e.id) }}>Settle up</button>
-    </div>
-  )
-)}
-                        {/* Payer: others owe you */}
-                        {e.payerId === currentUserId && (e.participantIds || []).length > 1 && (
-  e.expenseStatus === 'Settled' ? (
-    <div className="settled-text">✓ All settled</div>
-  ) : (
-    <div className="owes-row">
-      <span className="you-paid-info">Others owe you <strong>{getCurrencySymbol(e.currency)}{othersOweTotal(e).toFixed(2)}</strong></span>
-    </div>
-  )
-)}
-                        {e.imageUrl && <a href={e.imageUrl} target="_blank" rel="noreferrer">View bill</a>}
-                      </div>
-                      <div className="card-actions">
-                        <button onClick={ev => { ev.stopPropagation(); startEditExpense(e); setShowExpenseModal(true) }}>Edit</button>
-                        {(e.createdBy === currentUserId || (!e.createdBy && e.payerId === currentUserId)) && (
-                          <button onClick={ev => { ev.stopPropagation(); handleDeleteExpense(e) }}>Delete</button>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                  {sorted.length === 0 && <li className="muted">No expenses in this group yet</li>}
-                </ul>
-
-                {/* Group Chat UI */}
-                <div className="group-chat-panel" style={{ marginTop: '2rem', borderTop: '1px solid #333', paddingTop: '1rem' }}>
-                  <h3>Group Chat</h3>
-                  <div className="group-chat-messages" style={{ maxHeight: 200, overflowY: 'auto', marginBottom: '1rem', background: '#222', padding: '0.5rem', borderRadius: 6 }}>
-                    {(groupChats[groupDetailView] || []).length === 0 && <div className="muted">No messages yet.</div>}
-                    {(groupChats[groupDetailView] || []).map((msg, idx) => (
-                      <div key={idx} style={{ marginBottom: 8 }}>
-                        <span style={{ fontWeight: msg.user === currentUserName ? 'bold' : 'normal', color: msg.user === currentUserName ? '#6cf' : '#fff' }}>{msg.user}:</span> <span>{msg.message}</span>
-                        <div className="muted" style={{ fontSize: '0.7rem' }}>{new Date(msg.timestamp).toLocaleTimeString()}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input
-                      type="text"
-                      value={groupChatInputs[groupDetailView] || ''}
-                      onChange={e => setGroupChatInputs(prev => ({ ...prev, [groupDetailView!]: e.target.value }))}
-                      placeholder="Type a message..."
-                      style={{ flex: 1 }}
-                      onKeyDown={e => { if (e.key === 'Enter') handleSendGroupChatMessage(groupDetailView!); }}
-                    />
-                    <button type="button" onClick={() => handleSendGroupChatMessage(groupDetailView!)} disabled={!(groupChatInputs[groupDetailView]?.trim())}>Send</button>
-                  </div>
-                </div>
-              </section>
+              renderWorkspaceDashboard({
+                title: grp?.name || 'Group workspace',
+                subtitle: `${sorted.length} expenses · ${groupUnsettled} unsettled`,
+                breadcrumb: 'Finwise / Groups / Workspace',
+                expenses: sorted,
+                participants: (grp?.memberIds || []).map((memberId) => users.find((user) => user.id === memberId)).filter(Boolean) as User[],
+                onBack: () => { setGroupDetailView(null); setExpenseDetailView(null) },
+                onAddExpense: () => {
+                  resetExpenseForm()
+                  setEditingExpense(null)
+                  setIsGroupExpense(true)
+                  setIsFriendExpense(false)
+                  setSelectedGroupId(groupDetailView)
+                  setShowExpenseModal(true)
+                },
+                emptyTitle: 'No expenses in this group yet.',
+                emptyBody: 'Add an expense to start tracking shared balances.',
+                scopeLabel: grp ? `${grp.name} settlements` : 'Group settlements',
+                mode: 'group',
+                accentLabel: 'Others Spent',
+                groupChatId: groupDetailView,
+              })
             )
           })()}
 
@@ -2624,6 +3367,14 @@ async function handleSettleUp(expenseId: string) {
                       ) : (
                         filteredExpenseFeed.map((expense) => {
                           const isGroupExpense = expense.type === 'GROUP'
+                          const participants = expense.participantIds || []
+                          const friendCounterpartyId = isGroupExpense && participants.length === 2 && participants.includes(currentUserId)
+                            ? participants.find((participantId) => participantId !== currentUserId) || ''
+                            : ''
+                          const isFriendToFriendExpense = !!friendCounterpartyId
+                          const friendCounterpartyName = friendCounterpartyId
+                            ? users.find((user) => user.id === friendCounterpartyId)?.name || 'Friend'
+                            : ''
                           const groupName = expense.groupId ? (groups.find((group) => group.id === expense.groupId)?.name || 'Unknown group') : null
                           const isRecurring = !!(expense.isRecurring || expense.recurring)
                           const isSelected = expenseDetailView?.id === expense.id
@@ -2635,7 +3386,7 @@ async function handleSettleUp(expenseId: string) {
                               onClick={() => setExpenseDetailView(expense)}
                             >
                               <div className="expense-stream-main">
-                                <div className="expense-stream-icon">{isGroupExpense ? 'G' : 'P'}</div>
+                                <div className="expense-stream-icon">{isFriendToFriendExpense ? 'F' : isGroupExpense ? 'G' : 'P'}</div>
                                 <div className="expense-stream-copy">
                                   <div className="expense-stream-topline">
                                     <strong>{expense.description}</strong>
@@ -2645,7 +3396,13 @@ async function handleSettleUp(expenseId: string) {
                                     {isRecurring && <span className="expense-recurring-pill">Recurring</span>}
                                   </div>
                                   <div className="expense-stream-meta">
-                                    <span>{isGroupExpense ? (groupName || 'Group expense') : 'Personal expense'}</span>
+                                    <span>
+                                      {isFriendToFriendExpense
+                                        ? `Friend expense with ${friendCounterpartyName}`
+                                        : isGroupExpense
+                                        ? (groupName || 'Group expense')
+                                        : 'Personal expense'}
+                                    </span>
                                     <span>{payerName(expense.payerId)}</span>
                                     {expense.createdAt && <span>{new Date(expense.createdAt).toLocaleDateString()}</span>}
                                   </div>
@@ -2697,11 +3454,24 @@ async function handleSettleUp(expenseId: string) {
                     <>
                       <div className="expenses-detail-head">
                         <div>
+                          {(() => {
+                            const detailParticipants = expenseDetailView.participantIds || []
+                            const detailCounterpartyId = expenseDetailView.type === 'GROUP' && detailParticipants.length === 2 && detailParticipants.includes(currentUserId)
+                              ? detailParticipants.find((participantId) => participantId !== currentUserId) || ''
+                              : ''
+                            const detailCounterpartyName = detailCounterpartyId
+                              ? users.find((user) => user.id === detailCounterpartyId)?.name || 'Friend'
+                              : ''
+                            return (
                           <p className="expenses-detail-eyebrow">
-                            {expenseDetailView.type === 'GROUP'
+                            {detailCounterpartyId
+                              ? `Friend expense with ${detailCounterpartyName}`
+                              : expenseDetailView.type === 'GROUP'
                               ? (groups.find((group) => group.id === expenseDetailView.groupId)?.name || 'Group expense')
                               : 'Personal expense'}
                           </p>
+                            )
+                          })()}
                           <h3>{expenseDetailView.description}</h3>
                         </div>
                         <div className="expenses-detail-amount">
@@ -2956,9 +3726,7 @@ async function handleSettleUp(expenseId: string) {
           {/* ── Account tab — daily spending bar chart ── */}
           {activeTab === 'Account' && (() => {
             const now = new Date()
-            const year = now.getFullYear()
-            const month = now.getMonth()
-            const daysInMonth = new Date(year, month + 1, 0).getDate()
+            const selectedBudgetMeta = getBudgetPeriodMeta(selectedBudgetPeriod, now)
 
             // De-duplicate: allGroupExpenses may overlap with personalExpenses for group expenses the user paid
             const seenIds = new Set<string>()
@@ -2966,45 +3734,315 @@ async function handleSettleUp(expenseId: string) {
             ;[...personalExpenses, ...allGroupExpenses].forEach(exp => {
               if (!seenIds.has(exp.id)) { seenIds.add(exp.id); allExpenses.push(exp) }
             })
-            const dailyTotals: number[] = new Array(daysInMonth).fill(0)
-
-            allExpenses.forEach((exp) => {
-              if (!exp.createdAt) return
-              const d = new Date(exp.createdAt)
-              if (d.getFullYear() === year && d.getMonth() === month) {
-                // Always count only user's own share
-                if (exp.type === 'GROUP' && (exp.participantIds || []).includes(currentUserId)) {
-                  dailyTotals[d.getDate() - 1] += userShare(exp)
-                } else if (exp.type === 'PERSONAL' && exp.payerId === currentUserId) {
-                  dailyTotals[d.getDate() - 1] += exp.amount
-                }
+            const getExpenseAmountForUser = (exp: Expense) => {
+              if (exp.type === 'GROUP' && (exp.participantIds || []).includes(currentUserId)) {
+                return userShare(exp)
               }
-            })
+              if (exp.type === 'PERSONAL' && exp.payerId === currentUserId) {
+                return exp.amount
+              }
+              return 0
+            }
 
-            const maxVal = Math.max(...dailyTotals, 1)
-            const monthName = now.toLocaleString('default', { month: 'long', year: 'numeric' })
-            const totalMonth = dailyTotals.reduce((s, v) => s + v, 0)
+            type ChartBucket = {
+              key: string
+              label: string
+              total: number
+              start: Date
+              end: Date
+            }
+
+            const makeBuckets = (start: Date, end: Date, unit: 'MINUTE' | 'HOUR' | 'DAY' | 'WEEK' | 'MONTH') => {
+              const buckets: ChartBucket[] = []
+              const cursor = new Date(start)
+              let i = 0
+              while (cursor < end) {
+                const bucketStart = new Date(cursor)
+                const bucketEnd = new Date(cursor)
+                if (unit === 'MINUTE') bucketEnd.setMinutes(bucketEnd.getMinutes() + 1)
+                if (unit === 'HOUR') bucketEnd.setHours(bucketEnd.getHours() + 1)
+                if (unit === 'DAY') bucketEnd.setDate(bucketEnd.getDate() + 1)
+                if (unit === 'WEEK') bucketEnd.setDate(bucketEnd.getDate() + 7)
+                if (unit === 'MONTH') bucketEnd.setMonth(bucketEnd.getMonth() + 1)
+                if (bucketEnd > end) bucketEnd.setTime(end.getTime())
+
+                let label = ''
+                if (unit === 'MINUTE') label = String(bucketStart.getMinutes()).padStart(2, '0')
+                if (unit === 'HOUR') label = `${String(bucketStart.getHours()).padStart(2, '0')}:00`
+                if (unit === 'DAY') label = String(bucketStart.getDate())
+                if (unit === 'WEEK') label = `W${i + 1}`
+                if (unit === 'MONTH') label = bucketStart.toLocaleString('default', { month: 'short' })
+
+                buckets.push({
+                  key: `${unit}-${bucketStart.toISOString()}`,
+                  label,
+                  total: 0,
+                  start: bucketStart,
+                  end: bucketEnd,
+                })
+
+                cursor.setTime(bucketEnd.getTime())
+                i += 1
+              }
+
+              return buckets
+            }
+
+            const applyTotals = (buckets: ChartBucket[]) => {
+              allExpenses.forEach((exp) => {
+                if (!exp.createdAt) return
+                const amount = getExpenseAmountForUser(exp)
+                if (amount <= 0) return
+                const createdAt = new Date(exp.createdAt)
+                for (let i = 0; i < buckets.length; i += 1) {
+                  const b = buckets[i]
+                  if (createdAt >= b.start && createdAt < b.end) {
+                    b.total += amount
+                    break
+                  }
+                }
+              })
+            }
+
+            const baseRangeStart = selectedBudgetMeta.rangeStart
+            const baseRangeEnd = selectedBudgetMeta.rangeEnd
+            const isDrilled = accountChartDrillStartMs !== null && accountChartDrillEndMs !== null
+            const chartRangeStart = isDrilled ? new Date(accountChartDrillStartMs) : baseRangeStart
+            const chartRangeEnd = isDrilled ? new Date(accountChartDrillEndMs) : baseRangeEnd
+
+            const baseUnit: 'HOUR' | 'DAY' | 'WEEK' | 'MONTH'
+              = selectedBudgetPeriod === 'DAILY'
+                ? 'HOUR'
+                : selectedBudgetPeriod === 'WEEKLY' || selectedBudgetPeriod === 'MONTHLY'
+                ? 'DAY'
+                : selectedBudgetPeriod === 'QUARTERLY'
+                ? 'WEEK'
+                : 'MONTH'
+
+            const drillUnit: 'MINUTE' | 'HOUR' | 'DAY'
+              = selectedBudgetPeriod === 'DAILY'
+                ? 'MINUTE'
+                : selectedBudgetPeriod === 'WEEKLY' || selectedBudgetPeriod === 'MONTHLY'
+                ? 'HOUR'
+                : 'DAY'
+
+            const chartBuckets = makeBuckets(chartRangeStart, chartRangeEnd, isDrilled ? drillUnit : baseUnit)
+            applyTotals(chartBuckets)
+
+            const spentForSelectedPeriod = allExpenses.reduce((sum, exp) => {
+              if (!exp.createdAt) return sum
+              const createdAt = new Date(exp.createdAt)
+              if (createdAt < selectedBudgetMeta.rangeStart || createdAt >= selectedBudgetMeta.rangeEnd) return sum
+
+              return sum + getExpenseAmountForUser(exp)
+            }, 0)
+
+            const maxVal = Math.max(...chartBuckets.map((b) => b.total), 1)
+            const baseTotal = chartBuckets.reduce((s, b) => s + b.total, 0)
+            const budgetRemaining = budgetAmount - spentForSelectedPeriod
+            const budgetProgress = budgetAmount > 0 ? Math.min((spentForSelectedPeriod / budgetAmount) * 100, 100) : 0
+            const chartTitle = isDrilled
+              ? `${drillUnit === 'MINUTE' ? 'Minute' : drillUnit === 'HOUR' ? 'Hourly' : 'Daily'} spending`
+              : `${baseUnit === 'HOUR' ? 'Hourly' : baseUnit === 'DAY' ? 'Daily' : baseUnit === 'WEEK' ? 'Weekly' : 'Monthly'} spending`
+            const chartLabel = isDrilled ? accountChartDrillLabel : selectedBudgetMeta.label
 
             return (
-              <section className="panel">
-                <h2>Daily Spending — {monthName}</h2>
-                <p className="muted">Total this month: <strong style={{ color: '#fff' }}>₹{totalMonth.toFixed(2)}</strong></p>
-                <div className="bar-chart">
-                  {dailyTotals.map((val, i) => (
-                    <div className="bar-col" key={i} title={`Day ${i + 1}: ₹${val.toFixed(2)}`}>
-                      <div
-                        className="bar-fill"
-                        style={{ height: `${Math.max((val / maxVal) * 100, val > 0 ? 4 : 0)}%` }}
-                      />
-                      <span className="bar-label">{i + 1}</span>
+              <section className="account-shell">
+                <div className="account-hero panel">
+                  <div>
+                    <p className="dashboard-breadcrumb">Splitwise / Account</p>
+                    <h2>Account overview</h2>
+                    <p className="account-subtitle">Track your budget by period alongside your day-by-day spending.</p>
+                  </div>
+                  <div className="dashboard-range">
+                    <label className="field-label" style={{ margin: 0 }}>Budget period</label>
+                    <select
+                      value={selectedBudgetPeriod}
+                      onChange={(e) => setSelectedBudgetPeriod(e.target.value as BudgetPeriod)}
+                      style={{ minWidth: 170 }}
+                    >
+                      <option value="DAILY">Daily</option>
+                      <option value="WEEKLY">Weekly</option>
+                      <option value="MONTHLY">Monthly</option>
+                      <option value="QUARTERLY">Quarterly</option>
+                      <option value="YEARLY">Yearly</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="account-grid">
+                  <section className="panel account-budget-panel">
+                    <div className="account-panel-head">
+                      <h3>{selectedBudgetMeta.titleLabel} budget</h3>
+                      <span className="muted">{selectedBudgetMeta.label}</span>
                     </div>
-                  ))}
+
+                    <form className="account-budget-form" onSubmit={handleSaveBudget}>
+                      <label className="field-label">Budget amount</label>
+                      <div className="account-budget-entry">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder={selectedBudgetMeta.placeholder}
+                          value={budgetInput}
+                          onChange={(event) => setBudgetInput(event.target.value)}
+                        />
+                        <button type="submit">Save</button>
+                      </div>
+                    </form>
+
+                    <div className="account-budget-stats">
+                      <div className="account-budget-kpi">
+                        <span>Budget</span>
+                        <strong>{getCurrencySymbol('INR')}{budgetAmount.toFixed(2)}</strong>
+                      </div>
+                      <div className="account-budget-kpi">
+                        <span>Spent</span>
+                        <strong>{getCurrencySymbol('INR')}{spentForSelectedPeriod.toFixed(2)}</strong>
+                      </div>
+                      <div className="account-budget-kpi">
+                        <span>Remaining</span>
+                        <strong className={budgetRemaining >= 0 ? 'positive' : 'negative'}>
+                          {budgetRemaining >= 0 ? '' : '-'}{getCurrencySymbol('INR')}{Math.abs(budgetRemaining).toFixed(2)}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="account-budget-progress">
+                      <div className="account-budget-progress-bar">
+                        <div className="account-budget-progress-fill" style={{ width: `${budgetProgress}%` }} />
+                      </div>
+                      <span className="muted">
+                        {budgetAmount > 0 ? `${budgetProgress.toFixed(0)}% of budget used` : `Add a budget to track your ${selectedBudgetMeta.titleLabel.toLowerCase()} target`}
+                      </span>
+                    </div>
+                  </section>
+
+                  <section className="panel">
+                    <div className="account-panel-head">
+                      <h3>{chartTitle}</h3>
+                      <span className="muted">{chartLabel}</span>
+                    </div>
+                    <p className="muted">
+                      {isDrilled ? 'Total in selected slice' : `Total this ${selectedBudgetMeta.titleLabel.toLowerCase()}`}:{' '}
+                      <strong style={{ color: 'inherit' }}>{getCurrencySymbol('INR')}{baseTotal.toFixed(2)}</strong>
+                    </p>
+                    {isDrilled && (
+                      <button
+                        type="button"
+                        className="ghost-btn"
+                        style={{ marginBottom: '0.6rem' }}
+                        onClick={() => {
+                          setAccountChartDrillStartMs(null)
+                          setAccountChartDrillEndMs(null)
+                          setAccountChartDrillLabel('')
+                        }}
+                      >
+                        Back to {selectedBudgetMeta.titleLabel.toLowerCase()} view
+                      </button>
+                    )}
+                    <div className="bar-chart">
+                      {chartBuckets.map((bucket) => (
+                        <div
+                          className="bar-col"
+                          key={bucket.key}
+                          title={`${bucket.label}: ${getCurrencySymbol('INR')}${bucket.total.toFixed(2)}`}
+                          onClick={() => {
+                            if (isDrilled) return
+                            setAccountChartDrillStartMs(bucket.start.getTime())
+                            setAccountChartDrillEndMs(bucket.end.getTime())
+                            setAccountChartDrillLabel(
+                              `${bucket.start.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })} - ${new Date(bucket.end.getTime() - 1).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`,
+                            )
+                          }}
+                          style={{ cursor: isDrilled ? 'default' : 'pointer' }}
+                        >
+                          <div
+                            className="bar-fill"
+                            style={{ height: `${Math.max((bucket.total / maxVal) * 100, bucket.total > 0 ? 4 : 0)}%` }}
+                          />
+                          <span className="bar-label">{bucket.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {!isDrilled && (
+                      <p className="muted" style={{ marginTop: '0.5rem' }}>
+                        Click any bar to drill down into {selectedBudgetMeta.titleLabel.toLowerCase()} details.
+                      </p>
+                    )}
+                  </section>
                 </div>
               </section>
             )
           })()}
         </main>
       </div>
+
+      {showQuickGroupChat && (
+        <div className="modal-overlay" onClick={() => setShowQuickGroupChat(false)}>
+          <div className="modal quick-chat-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Group chat</h2>
+              <button className="modal-close" onClick={() => setShowQuickGroupChat(false)}>✕</button>
+            </div>
+
+            <div className="form-vertical">
+              <label className="field-label">Select group</label>
+              <select
+                value={quickChatGroupId}
+                onChange={(event) => setQuickChatGroupId(event.target.value)}
+              >
+                {groups
+                  .filter((group) => (group.memberIds || []).includes(currentUserId))
+                  .map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div className="quick-chat-messages">
+              {quickChatGroupId && (groupChats[quickChatGroupId] || []).length === 0 && <div className="muted">No messages yet.</div>}
+              {!quickChatGroupId && <div className="muted">No groups available for chat.</div>}
+              {quickChatGroupId && (groupChats[quickChatGroupId] || []).map((msg, idx) => (
+                <div key={idx} className="quick-chat-message">
+                  <span className={msg.user === currentUserName ? 'expense-chat-user expense-chat-user-self' : 'expense-chat-user'}>{msg.user}</span>
+                  <span>{msg.message}</span>
+                  <div className="muted" style={{ fontSize: '0.7rem' }}>{new Date(msg.timestamp).toLocaleTimeString()}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="quick-chat-composer">
+              <input
+                type="text"
+                value={groupChatInputs[quickChatGroupId] || ''}
+                onChange={(event) => setGroupChatInputs((prev) => ({ ...prev, [quickChatGroupId]: event.target.value }))}
+                placeholder="Type a message..."
+                onKeyDown={(event) => { if (event.key === 'Enter' && quickChatGroupId) handleSendGroupChatMessage(quickChatGroupId) }}
+                disabled={!quickChatGroupId}
+              />
+              <button
+                type="button"
+                onClick={() => quickChatGroupId && handleSendGroupChatMessage(quickChatGroupId)}
+                disabled={!quickChatGroupId || !(groupChatInputs[quickChatGroupId]?.trim())}
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <button
+        className="fab fab-chat"
+        title="Open group chat"
+        onClick={() => setShowQuickGroupChat(true)}
+      >
+        💬
+      </button>
 
       {/* ── FAB (floating + button) ── */}
       <button className="fab" title="Add expense" onClick={() => {
