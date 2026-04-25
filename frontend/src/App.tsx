@@ -23,6 +23,7 @@ type ExpenseType = 'PERSONAL' | 'GROUP'
 type Expense = {
   id: string
   description: string
+  tag?: string
   amount: number
   currency: string
   payerId: string
@@ -293,6 +294,7 @@ function App() {
 
     function resetExpenseForm() {
       setExpenseDescription('');
+      setExpenseTag('Others');
       setExpenseAmount('');
       setExpenseCurrency('INR');
       setIsGroupExpense(false);
@@ -393,6 +395,7 @@ function App() {
   const [showCreateGroupPanel, setShowCreateGroupPanel] = useState(false)
 
   const [expenseDescription, setExpenseDescription] = useState('')
+  const [expenseTag, setExpenseTag] = useState('Others')
   const [expenseAmount, setExpenseAmount] = useState('')
   const [expenseCurrency, setExpenseCurrency] = useState('INR')
   const [isGroupExpense, setIsGroupExpense] = useState(false)
@@ -490,9 +493,12 @@ function App() {
   const [selectedBudgetPeriod, setSelectedBudgetPeriod] = useState<BudgetPeriod>('MONTHLY')
   const [budgetInput, setBudgetInput] = useState('')
   const [budgetAmount, setBudgetAmount] = useState<number>(0)
-  const [accountChartDrillStartMs, setAccountChartDrillStartMs] = useState<number | null>(null)
-  const [accountChartDrillEndMs, setAccountChartDrillEndMs] = useState<number | null>(null)
-  const [accountChartDrillLabel, setAccountChartDrillLabel] = useState('')
+  const [defaultCurrency, setDefaultCurrency] = useState('INR')
+  const [settlementRemindersEnabled, setSettlementRemindersEnabled] = useState(true)
+  const [reminderDelayDays, setReminderDelayDays] = useState<'3' | '5' | '7'>('5')
+  const [defaultSplitMethod, setDefaultSplitMethod] = useState<'equal' | 'unequal' | 'percentage'>('equal')
+  const [accountThemePreference, setAccountThemePreference] = useState<'light' | 'dark' | 'system'>('system')
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false)
 
   const [editingFriend, setEditingFriend] = useState<User | null>(null)
   const [editFriendName, setEditFriendName] = useState('')
@@ -540,21 +546,24 @@ function App() {
   }, [budgetStorageKey])
 
   useEffect(() => {
-    setAccountChartDrillStartMs(null)
-    setAccountChartDrillEndMs(null)
-    setAccountChartDrillLabel('')
-  }, [selectedBudgetPeriod])
-
-  useEffect(() => {
     if (!showQuickGroupChat || quickChatGroupId) return
-    const availableGroup = groups.find((group) => (group.memberIds || []).includes(currentUserId))
+    const availableGroup = groupDetailView
+      ? groups.find((group) => group.id === groupDetailView)
+      : groups.find((group) => (group.memberIds || []).includes(currentUserId))
     if (availableGroup) {
       setQuickChatGroupId(availableGroup.id)
     }
-  }, [showQuickGroupChat, quickChatGroupId, groups, currentUserId])
+  }, [showQuickGroupChat, quickChatGroupId, groups, currentUserId, groupDetailView])
 
   function toggleTheme() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))
+  }
+
+  function openQuickGroupChat(groupId?: string) {
+    if (groupId) {
+      setQuickChatGroupId(groupId)
+    }
+    setShowQuickGroupChat(true)
   }
 
   function handleSaveBudget(event: React.FormEvent) {
@@ -1045,6 +1054,7 @@ const handleUnflagExpense = React.useCallback(async (expenseId: string) => {
     const payer = useGroup && expensePayerId ? expensePayerId : currentUserId
     const payload: Partial<Expense> & { [key: string]: unknown } = {
       description: expenseDescription,
+      tag: normalizeExpenseTag(expenseTag),
       amount: parseFloat(expenseAmount),
       currency: expenseCurrency,
       payerId: payer,
@@ -1094,6 +1104,7 @@ const handleUnflagExpense = React.useCallback(async (expenseId: string) => {
       setSplitMode('equal')   
       setCustomSplits({}) 
       setExpenseDescription('')
+      setExpenseTag('Others')
       setExpenseAmount('')
       setExpenseImageUrl('')
       setExpensePayerId('')
@@ -1120,6 +1131,7 @@ const handleUnflagExpense = React.useCallback(async (expenseId: string) => {
   function startEditExpense(expense: Expense) {
     setEditingExpense(expense)
     setExpenseDescription(expense.description)
+    setExpenseTag(normalizeExpenseTag(expense.tag))
     setExpenseAmount(String(expense.amount))
     setIsGroupExpense(expense.type === 'GROUP')
     setSelectedGroupId(expense.groupId || '')
@@ -1268,6 +1280,17 @@ async function handleSettleUp(expenseId: string) {
     return 'Others'
   }
 
+  function normalizeExpenseTag(tag?: string): string {
+    const normalized = (tag || '').trim()
+    return normalized || 'Others'
+  }
+
+  function getExpenseCategory(expense: Expense): string {
+    return expense.tag && expense.tag.trim()
+      ? normalizeExpenseTag(expense.tag)
+      : inferExpenseCategory(expense.description)
+  }
+
   function getCategoryColor(index: number): string {
     const colors = ['#6f42d9', '#3b82f6', '#d946b1', '#34d399', '#fbbf24', '#f97316']
     return colors[index % colors.length]
@@ -1310,7 +1333,6 @@ async function handleSettleUp(expenseId: string) {
     mode: 'group' | 'friend'
     primaryParticipantId?: string
     accentLabel?: string
-    groupChatId?: string
   }) {
     const {
       title,
@@ -1326,7 +1348,6 @@ async function handleSettleUp(expenseId: string) {
       mode,
       primaryParticipantId,
       accentLabel,
-      groupChatId,
     } = config
 
     const workspaceSearch = workspaceExpenseSearch.trim().toLowerCase()
@@ -1372,7 +1393,7 @@ async function handleSettleUp(expenseId: string) {
 
     const categoryTotals = Object.entries(
       expenses.reduce<Record<string, number>>((acc, expense) => {
-        const category = inferExpenseCategory(expense.description)
+        const category = getExpenseCategory(expense)
         acc[category] = (acc[category] || 0) + expense.amount
         return acc
       }, {})
@@ -1703,7 +1724,7 @@ async function handleSettleUp(expenseId: string) {
                         <td>
                           <div className="workspace-expense-cell">
                             <div className="workspace-expense-icon" style={{ background: getCategoryColor(index) }}>
-                              {inferExpenseCategory(expense.description).charAt(0)}
+                              {getExpenseCategory(expense).charAt(0)}
                             </div>
                             <div>
                               <strong>{expense.description}</strong>
@@ -1741,35 +1762,6 @@ async function handleSettleUp(expenseId: string) {
           )}
         </section>
 
-        {mode === 'group' && groupChatId && (
-          <section className="workspace-panel workspace-chat-panel">
-            <div className="workspace-panel-head">
-              <h3>Group Chat</h3>
-            </div>
-            <div className="expense-chat-panel">
-              <div className="expense-chat-messages">
-                {(groupChats[groupChatId] || []).length === 0 && <div className="muted">No messages yet.</div>}
-                {(groupChats[groupChatId] || []).map((msg, idx) => (
-                  <div key={idx} className="expense-chat-message">
-                    <span className={msg.user === currentUserName ? 'expense-chat-user expense-chat-user-self' : 'expense-chat-user'}>{msg.user}</span>
-                    <span>{msg.message}</span>
-                    <div className="muted" style={{ fontSize: '0.7rem' }}>{new Date(msg.timestamp).toLocaleTimeString()}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="expense-chat-composer">
-                <input
-                  type="text"
-                  value={groupChatInputs[groupChatId] || ''}
-                  onChange={(event) => setGroupChatInputs((prev) => ({ ...prev, [groupChatId]: event.target.value }))}
-                  placeholder="Type a message..."
-                  onKeyDown={(event) => { if (event.key === 'Enter') handleSendGroupChatMessage(groupChatId) }}
-                />
-                <button type="button" onClick={() => handleSendGroupChatMessage(groupChatId)} disabled={!(groupChatInputs[groupChatId]?.trim())}>Send</button>
-              </div>
-            </div>
-          </section>
-        )}
       </section>
     )
   }
@@ -3291,7 +3283,6 @@ async function handleSettleUp(expenseId: string) {
                 scopeLabel: grp ? `${grp.name} settlements` : 'Group settlements',
                 mode: 'group',
                 accentLabel: 'Others Spent',
-                groupChatId: groupDetailView,
               })
             )
           })()}
@@ -3396,6 +3387,7 @@ async function handleSettleUp(expenseId: string) {
                                     {isRecurring && <span className="expense-recurring-pill">Recurring</span>}
                                   </div>
                                   <div className="expense-stream-meta">
+                                    <span>{getExpenseCategory(expense)}</span>
                                     <span>
                                       {isFriendToFriendExpense
                                         ? `Friend expense with ${friendCounterpartyName}`
@@ -3484,6 +3476,10 @@ async function handleSettleUp(expenseId: string) {
                         <div className="expenses-detail-kv">
                           <span>Payer</span>
                           <strong>{payerName(expenseDetailView.payerId)}</strong>
+                        </div>
+                        <div className="expenses-detail-kv">
+                          <span>Category</span>
+                          <strong>{getExpenseCategory(expenseDetailView)}</strong>
                         </div>
                         <div className="expenses-detail-kv">
                           <span>Created</span>
@@ -3728,250 +3724,334 @@ async function handleSettleUp(expenseId: string) {
             const now = new Date()
             const selectedBudgetMeta = getBudgetPeriodMeta(selectedBudgetPeriod, now)
 
-            // De-duplicate: allGroupExpenses may overlap with personalExpenses for group expenses the user paid
             const seenIds = new Set<string>()
             const allExpenses: Expense[] = []
-            ;[...personalExpenses, ...allGroupExpenses].forEach(exp => {
-              if (!seenIds.has(exp.id)) { seenIds.add(exp.id); allExpenses.push(exp) }
-            })
-            const getExpenseAmountForUser = (exp: Expense) => {
-              if (exp.type === 'GROUP' && (exp.participantIds || []).includes(currentUserId)) {
-                return userShare(exp)
+            ;[...personalExpenses, ...allGroupExpenses].forEach((expense) => {
+              if (!seenIds.has(expense.id)) {
+                seenIds.add(expense.id)
+                allExpenses.push(expense)
               }
-              if (exp.type === 'PERSONAL' && exp.payerId === currentUserId) {
-                return exp.amount
+            })
+
+            const getExpenseAmountForUser = (expense: Expense) => {
+              if (expense.type === 'GROUP' && (expense.participantIds || []).includes(currentUserId)) {
+                return userShare(expense)
+              }
+              if (expense.type === 'PERSONAL' && expense.payerId === currentUserId) {
+                return expense.amount
               }
               return 0
             }
 
-            type ChartBucket = {
-              key: string
-              label: string
-              total: number
-              start: Date
-              end: Date
-            }
-
-            const makeBuckets = (start: Date, end: Date, unit: 'MINUTE' | 'HOUR' | 'DAY' | 'WEEK' | 'MONTH') => {
-              const buckets: ChartBucket[] = []
-              const cursor = new Date(start)
-              let i = 0
-              while (cursor < end) {
-                const bucketStart = new Date(cursor)
-                const bucketEnd = new Date(cursor)
-                if (unit === 'MINUTE') bucketEnd.setMinutes(bucketEnd.getMinutes() + 1)
-                if (unit === 'HOUR') bucketEnd.setHours(bucketEnd.getHours() + 1)
-                if (unit === 'DAY') bucketEnd.setDate(bucketEnd.getDate() + 1)
-                if (unit === 'WEEK') bucketEnd.setDate(bucketEnd.getDate() + 7)
-                if (unit === 'MONTH') bucketEnd.setMonth(bucketEnd.getMonth() + 1)
-                if (bucketEnd > end) bucketEnd.setTime(end.getTime())
-
-                let label = ''
-                if (unit === 'MINUTE') label = String(bucketStart.getMinutes()).padStart(2, '0')
-                if (unit === 'HOUR') label = `${String(bucketStart.getHours()).padStart(2, '0')}:00`
-                if (unit === 'DAY') label = String(bucketStart.getDate())
-                if (unit === 'WEEK') label = `W${i + 1}`
-                if (unit === 'MONTH') label = bucketStart.toLocaleString('default', { month: 'short' })
-
-                buckets.push({
-                  key: `${unit}-${bucketStart.toISOString()}`,
-                  label,
-                  total: 0,
-                  start: bucketStart,
-                  end: bucketEnd,
-                })
-
-                cursor.setTime(bucketEnd.getTime())
-                i += 1
-              }
-
-              return buckets
-            }
-
-            const applyTotals = (buckets: ChartBucket[]) => {
-              allExpenses.forEach((exp) => {
-                if (!exp.createdAt) return
-                const amount = getExpenseAmountForUser(exp)
-                if (amount <= 0) return
-                const createdAt = new Date(exp.createdAt)
-                for (let i = 0; i < buckets.length; i += 1) {
-                  const b = buckets[i]
-                  if (createdAt >= b.start && createdAt < b.end) {
-                    b.total += amount
-                    break
-                  }
-                }
-              })
-            }
-
-            const baseRangeStart = selectedBudgetMeta.rangeStart
-            const baseRangeEnd = selectedBudgetMeta.rangeEnd
-            const isDrilled = accountChartDrillStartMs !== null && accountChartDrillEndMs !== null
-            const chartRangeStart = isDrilled ? new Date(accountChartDrillStartMs) : baseRangeStart
-            const chartRangeEnd = isDrilled ? new Date(accountChartDrillEndMs) : baseRangeEnd
-
-            const baseUnit: 'HOUR' | 'DAY' | 'WEEK' | 'MONTH'
-              = selectedBudgetPeriod === 'DAILY'
-                ? 'HOUR'
-                : selectedBudgetPeriod === 'WEEKLY' || selectedBudgetPeriod === 'MONTHLY'
-                ? 'DAY'
-                : selectedBudgetPeriod === 'QUARTERLY'
-                ? 'WEEK'
-                : 'MONTH'
-
-            const drillUnit: 'MINUTE' | 'HOUR' | 'DAY'
-              = selectedBudgetPeriod === 'DAILY'
-                ? 'MINUTE'
-                : selectedBudgetPeriod === 'WEEKLY' || selectedBudgetPeriod === 'MONTHLY'
-                ? 'HOUR'
-                : 'DAY'
-
-            const chartBuckets = makeBuckets(chartRangeStart, chartRangeEnd, isDrilled ? drillUnit : baseUnit)
-            applyTotals(chartBuckets)
-
-            const spentForSelectedPeriod = allExpenses.reduce((sum, exp) => {
-              if (!exp.createdAt) return sum
-              const createdAt = new Date(exp.createdAt)
+            const spentForSelectedPeriod = allExpenses.reduce((sum, expense) => {
+              if (!expense.createdAt) return sum
+              const createdAt = new Date(expense.createdAt)
               if (createdAt < selectedBudgetMeta.rangeStart || createdAt >= selectedBudgetMeta.rangeEnd) return sum
-
-              return sum + getExpenseAmountForUser(exp)
+              return sum + getExpenseAmountForUser(expense)
             }, 0)
 
-            const maxVal = Math.max(...chartBuckets.map((b) => b.total), 1)
-            const baseTotal = chartBuckets.reduce((s, b) => s + b.total, 0)
             const budgetRemaining = budgetAmount - spentForSelectedPeriod
             const budgetProgress = budgetAmount > 0 ? Math.min((spentForSelectedPeriod / budgetAmount) * 100, 100) : 0
-            const chartTitle = isDrilled
-              ? `${drillUnit === 'MINUTE' ? 'Minute' : drillUnit === 'HOUR' ? 'Hourly' : 'Daily'} spending`
-              : `${baseUnit === 'HOUR' ? 'Hourly' : baseUnit === 'DAY' ? 'Daily' : baseUnit === 'WEEK' ? 'Weekly' : 'Monthly'} spending`
-            const chartLabel = isDrilled ? accountChartDrillLabel : selectedBudgetMeta.label
+
+            const accountCurrency = allExpenses.find((expense) => expense.currency)?.currency || 'INR'
+            const formatAccountMoney = (amount: number) =>
+              `${getCurrencySymbol(accountCurrency)}${new Intl.NumberFormat('en-IN', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+              }).format(Math.round(amount))}`
+
+            const totalPaid = allExpenses
+              .filter((expense) => expense.payerId === currentUserId)
+              .reduce((sum, expense) => sum + expense.amount, 0)
+            const totalReceived = dashboardSummary?.totalOwedToUser ?? 0
+            const netSummary = totalPaid - totalReceived
+
+            const sharedExpenses = allExpenses.filter((expense) => (expense.participantIds || []).length > 1)
+            const settledExpenses = sharedExpenses.filter((expense) => expense.expenseStatus === 'Settled')
+            const settlementRate = sharedExpenses.length ? (settledExpenses.length / sharedExpenses.length) * 100 : 0
+            const avgSettlementDays = settledExpenses.length
+              ? settledExpenses.reduce((sum, expense) => {
+                  if (!expense.createdAt) return sum
+                  const ageInDays = (now.getTime() - new Date(expense.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+                  return sum + Math.max(ageInDays, 0)
+                }, 0) / settledExpenses.length
+              : 0
+
+            const memberSinceDates = [
+              ...allExpenses.map((expense) => expense.createdAt).filter(Boolean),
+              ...activities.map((activity) => activity.createdAt).filter(Boolean),
+            ]
+            const memberSince = memberSinceDates.length
+              ? new Intl.DateTimeFormat('en-IN', { month: 'short', year: 'numeric' }).format(
+                  new Date(
+                    memberSinceDates
+                      .map((value) => new Date(value as string).getTime())
+                      .sort((left, right) => left - right)[0],
+                  ),
+                )
+              : 'Jan 2024'
+
+            const sessionItems = [
+              { device: 'Chrome on Windows', status: 'Current session', lastActive: 'Active now' },
+              { device: 'Android app', status: authToken ? 'Trusted device' : 'Signed out', lastActive: '2 days ago' },
+            ]
 
             return (
               <section className="account-shell">
                 <div className="account-hero panel">
-                  <div>
-                    <p className="dashboard-breadcrumb">Splitwise / Account</p>
-                    <h2>Account overview</h2>
-                    <p className="account-subtitle">Track your budget by period alongside your day-by-day spending.</p>
-                  </div>
-                  <div className="dashboard-range">
-                    <label className="field-label" style={{ margin: 0 }}>Budget period</label>
-                    <select
-                      value={selectedBudgetPeriod}
-                      onChange={(e) => setSelectedBudgetPeriod(e.target.value as BudgetPeriod)}
-                      style={{ minWidth: 170 }}
-                    >
-                      <option value="DAILY">Daily</option>
-                      <option value="WEEKLY">Weekly</option>
-                      <option value="MONTHLY">Monthly</option>
-                      <option value="QUARTERLY">Quarterly</option>
-                      <option value="YEARLY">Yearly</option>
-                    </select>
+                  <div className="account-hero-grid">
+                    <div className="account-profile-header">
+                      <div className="account-profile-avatar">{getInitials(currentUser?.name || 'You')}</div>
+                      <div className="account-profile-copy">
+                        <h3>{currentUser?.name || 'Rahul Sharma'}</h3>
+                        <p>{currentUser?.email || 'rahul@gmail.com'} · Member since {memberSince}</p>
+                        <div className="account-inline-actions">
+                          <button type="button" className="icon-btn">Edit profile</button>
+                          <button type="button" className="ghost-btn">Change password</button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
                 <div className="account-grid">
-                  <section className="panel account-budget-panel">
-                    <div className="account-panel-head">
-                      <h3>{selectedBudgetMeta.titleLabel} budget</h3>
-                      <span className="muted">{selectedBudgetMeta.label}</span>
-                    </div>
-
-                    <form className="account-budget-form" onSubmit={handleSaveBudget}>
-                      <label className="field-label">Budget amount</label>
-                      <div className="account-budget-entry">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder={selectedBudgetMeta.placeholder}
-                          value={budgetInput}
-                          onChange={(event) => setBudgetInput(event.target.value)}
-                        />
-                        <button type="submit">Save</button>
+                  <div className="account-stack">
+                    <section className="panel account-summary-panel">
+                      <div className="account-panel-head">
+                        <h3>Financial Summary</h3>
                       </div>
-                    </form>
-
-                    <div className="account-budget-stats">
-                      <div className="account-budget-kpi">
-                        <span>Budget</span>
-                        <strong>{getCurrencySymbol('INR')}{budgetAmount.toFixed(2)}</strong>
+                      <div className="account-financial-grid">
+                        <article className="account-financial-pill">
+                          <span>Paid</span>
+                          <strong>{formatAccountMoney(totalPaid)}</strong>
+                        </article>
+                        <article className="account-financial-pill">
+                          <span>Received</span>
+                          <strong>{formatAccountMoney(totalReceived)}</strong>
+                        </article>
+                        <article className="account-financial-pill">
+                          <span>Net</span>
+                          <strong className={netSummary >= 0 ? 'positive' : 'negative'}>
+                            {netSummary >= 0 ? '+' : '-'}{formatAccountMoney(Math.abs(netSummary))}
+                          </strong>
+                        </article>
                       </div>
-                      <div className="account-budget-kpi">
-                        <span>Spent</span>
-                        <strong>{getCurrencySymbol('INR')}{spentForSelectedPeriod.toFixed(2)}</strong>
-                      </div>
-                      <div className="account-budget-kpi">
-                        <span>Remaining</span>
-                        <strong className={budgetRemaining >= 0 ? 'positive' : 'negative'}>
-                          {budgetRemaining >= 0 ? '' : '-'}{getCurrencySymbol('INR')}{Math.abs(budgetRemaining).toFixed(2)}
-                        </strong>
-                      </div>
-                    </div>
-
-                    <div className="account-budget-progress">
-                      <div className="account-budget-progress-bar">
-                        <div className="account-budget-progress-fill" style={{ width: `${budgetProgress}%` }} />
-                      </div>
-                      <span className="muted">
-                        {budgetAmount > 0 ? `${budgetProgress.toFixed(0)}% of budget used` : `Add a budget to track your ${selectedBudgetMeta.titleLabel.toLowerCase()} target`}
-                      </span>
-                    </div>
-                  </section>
-
-                  <section className="panel">
-                    <div className="account-panel-head">
-                      <h3>{chartTitle}</h3>
-                      <span className="muted">{chartLabel}</span>
-                    </div>
-                    <p className="muted">
-                      {isDrilled ? 'Total in selected slice' : `Total this ${selectedBudgetMeta.titleLabel.toLowerCase()}`}:{' '}
-                      <strong style={{ color: 'inherit' }}>{getCurrencySymbol('INR')}{baseTotal.toFixed(2)}</strong>
-                    </p>
-                    {isDrilled && (
-                      <button
-                        type="button"
-                        className="ghost-btn"
-                        style={{ marginBottom: '0.6rem' }}
-                        onClick={() => {
-                          setAccountChartDrillStartMs(null)
-                          setAccountChartDrillEndMs(null)
-                          setAccountChartDrillLabel('')
-                        }}
-                      >
-                        Back to {selectedBudgetMeta.titleLabel.toLowerCase()} view
-                      </button>
-                    )}
-                    <div className="bar-chart">
-                      {chartBuckets.map((bucket) => (
-                        <div
-                          className="bar-col"
-                          key={bucket.key}
-                          title={`${bucket.label}: ${getCurrencySymbol('INR')}${bucket.total.toFixed(2)}`}
-                          onClick={() => {
-                            if (isDrilled) return
-                            setAccountChartDrillStartMs(bucket.start.getTime())
-                            setAccountChartDrillEndMs(bucket.end.getTime())
-                            setAccountChartDrillLabel(
-                              `${bucket.start.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })} - ${new Date(bucket.end.getTime() - 1).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`,
-                            )
-                          }}
-                          style={{ cursor: isDrilled ? 'default' : 'pointer' }}
-                        >
-                          <div
-                            className="bar-fill"
-                            style={{ height: `${Math.max((bucket.total / maxVal) * 100, bucket.total > 0 ? 4 : 0)}%` }}
-                          />
-                          <span className="bar-label">{bucket.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                    {!isDrilled && (
-                      <p className="muted" style={{ marginTop: '0.5rem' }}>
-                        Click any bar to drill down into {selectedBudgetMeta.titleLabel.toLowerCase()} details.
+                      <p className="muted">
+                        Settlement rate: {settlementRate.toFixed(0)}% · Avg settle: {avgSettlementDays.toFixed(1)} days
                       </p>
-                    )}
-                  </section>
+                    </section>
+
+                    <section className="panel account-budget-panel">
+                      <div className="account-panel-head">
+                        <h3>{selectedBudgetMeta.titleLabel} budget</h3>
+                        <span className="muted">{selectedBudgetMeta.label}</span>
+                      </div>
+
+                      <form className="account-budget-form" onSubmit={handleSaveBudget}>
+                        <label className="field-label">Budget period</label>
+                        <select
+                          value={selectedBudgetPeriod}
+                          onChange={(event) => setSelectedBudgetPeriod(event.target.value as BudgetPeriod)}
+                        >
+                          <option value="DAILY">Daily</option>
+                          <option value="WEEKLY">Weekly</option>
+                          <option value="MONTHLY">Monthly</option>
+                          <option value="QUARTERLY">Quarterly</option>
+                          <option value="YEARLY">Yearly</option>
+                        </select>
+                        <label className="field-label">Budget amount</label>
+                        <div className="account-budget-entry">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder={selectedBudgetMeta.placeholder}
+                            value={budgetInput}
+                            onChange={(event) => setBudgetInput(event.target.value)}
+                          />
+                          <button type="submit">Save</button>
+                        </div>
+                      </form>
+
+                      <div className="account-budget-stats">
+                        <div className="account-budget-kpi">
+                          <span>Budget</span>
+                          <strong>{getCurrencySymbol('INR')}{budgetAmount.toFixed(2)}</strong>
+                        </div>
+                        <div className="account-budget-kpi">
+                          <span>Spent</span>
+                          <strong>{getCurrencySymbol('INR')}{spentForSelectedPeriod.toFixed(2)}</strong>
+                        </div>
+                        <div className="account-budget-kpi">
+                          <span>Remaining</span>
+                          <strong className={budgetRemaining >= 0 ? 'positive' : 'negative'}>
+                            {budgetRemaining >= 0 ? '' : '-'}{getCurrencySymbol('INR')}{Math.abs(budgetRemaining).toFixed(2)}
+                          </strong>
+                        </div>
+                      </div>
+
+                      <div className="account-budget-progress">
+                        <div className="account-budget-progress-bar">
+                          <div className="account-budget-progress-fill" style={{ width: `${budgetProgress}%` }} />
+                        </div>
+                        <span className="muted">
+                          {budgetAmount > 0 ? `${budgetProgress.toFixed(0)}% of budget used` : `Add a budget to track your ${selectedBudgetMeta.titleLabel.toLowerCase()} target`}
+                        </span>
+                      </div>
+                    </section>
+
+                    <section className="panel account-preferences-panel">
+                      <div className="account-panel-head">
+                        <h3>Preferences</h3>
+                      </div>
+
+                      <div className="account-settings-section">
+                        <h4>General</h4>
+                        <div className="account-form-list">
+                          <label className="account-form-row">
+                            <span className="account-form-label">Default currency</span>
+                            <select value={defaultCurrency} onChange={(event) => setDefaultCurrency(event.target.value)}>
+                              <option value="INR">INR ₹</option>
+                              <option value="USD">USD $</option>
+                              <option value="EUR">EUR €</option>
+                              <option value="GBP">GBP £</option>
+                            </select>
+                          </label>
+
+                          <label className="account-form-row">
+                            <span className="account-form-label">Email notifications</span>
+                            <button
+                              type="button"
+                              className={currentUser?.emailNotificationsEnabled ? 'toggle-btn toggle-btn-on' : 'toggle-btn'}
+                              onClick={() => currentUser && handleToggleEmailNotifications(currentUser)}
+                            >
+                              {currentUser?.emailNotificationsEnabled ? 'On' : 'Off'}
+                            </button>
+                          </label>
+
+                          <label className="account-form-row">
+                            <span className="account-form-label">Default split method</span>
+                            <select
+                              value={defaultSplitMethod}
+                              onChange={(event) => setDefaultSplitMethod(event.target.value as 'equal' | 'unequal' | 'percentage')}
+                            >
+                              <option value="equal">Equal</option>
+                              <option value="unequal">Unequal</option>
+                              <option value="percentage">By %</option>
+                            </select>
+                          </label>
+
+                          <label className="account-form-row">
+                            <span className="account-form-label">Theme</span>
+                            <select
+                              value={accountThemePreference}
+                              onChange={(event) => {
+                                const value = event.target.value as 'light' | 'dark' | 'system'
+                                setAccountThemePreference(value)
+                                if (value === 'light' || value === 'dark') {
+                                  setTheme(value)
+                                }
+                              }}
+                            >
+                              <option value="light">Light</option>
+                              <option value="dark">Dark</option>
+                              <option value="system">System</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="account-settings-section">
+                        <h4>Reminders</h4>
+                        <div className="account-form-list">
+                          <label className="account-form-row">
+                            <span className="account-form-label">Settlement reminders</span>
+                            <button
+                              type="button"
+                              className={settlementRemindersEnabled ? 'toggle-btn toggle-btn-on' : 'toggle-btn'}
+                              onClick={() => setSettlementRemindersEnabled((value) => !value)}
+                            >
+                              {settlementRemindersEnabled ? 'On' : 'Off'}
+                            </button>
+                          </label>
+
+                          <label className="account-form-row">
+                            <span className="account-form-label">Reminder delay</span>
+                            <select
+                              value={reminderDelayDays}
+                              onChange={(event) => setReminderDelayDays(event.target.value as '3' | '5' | '7')}
+                              disabled={!settlementRemindersEnabled}
+                            >
+                              <option value="3">3 days</option>
+                              <option value="5">5 days</option>
+                              <option value="7">7 days</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="panel account-security-panel">
+                      <div className="account-panel-head">
+                        <h3>Security</h3>
+                      </div>
+                      <div className="account-settings-section">
+                        <div className="account-form-list">
+                          <label className="account-form-row">
+                            <span className="account-form-label">Two-factor authentication</span>
+                            <button
+                              type="button"
+                              className={twoFactorEnabled ? 'toggle-btn toggle-btn-on' : 'toggle-btn'}
+                              onClick={() => setTwoFactorEnabled((value) => !value)}
+                            >
+                              {twoFactorEnabled ? 'On' : 'Off'}
+                            </button>
+                          </label>
+                        </div>
+                        <div className="account-inline-actions">
+                          <button type="button" className="icon-btn">Change password</button>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="panel">
+                      <div className="account-panel-head">
+                        <h3>Active Sessions</h3>
+                      </div>
+                      <div className="account-session-list">
+                        {sessionItems.map((session) => (
+                          <div key={session.device} className="account-session-row">
+                            <div>
+                              <strong>{session.device}</strong>
+                              <p>{session.status}</p>
+                            </div>
+                            <span className="muted">{session.lastActive}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="panel">
+                      <div className="account-panel-head">
+                        <h3>Data & Export</h3>
+                      </div>
+                      <div className="account-inline-actions">
+                        <button type="button" className="icon-btn">Export JSON</button>
+                        <button type="button" className="ghost-btn">Export CSV</button>
+                        <button type="button" className="ghost-btn">Download all data</button>
+                      </div>
+                    </section>
+
+                    <section className="panel account-danger-panel">
+                      <div className="account-panel-head">
+                        <h3>Danger Zone</h3>
+                      </div>
+                      <p className="muted">Delete your account and permanently remove your profile, expenses, and history.</p>
+                      <div className="account-inline-actions">
+                        <button type="button" className="ghost-btn negative">Delete account</button>
+                      </div>
+                    </section>
+                  </div>
                 </div>
               </section>
             )
@@ -3987,21 +4067,28 @@ async function handleSettleUp(expenseId: string) {
               <button className="modal-close" onClick={() => setShowQuickGroupChat(false)}>✕</button>
             </div>
 
-            <div className="form-vertical">
-              <label className="field-label">Select group</label>
-              <select
-                value={quickChatGroupId}
-                onChange={(event) => setQuickChatGroupId(event.target.value)}
-              >
-                {groups
-                  .filter((group) => (group.memberIds || []).includes(currentUserId))
-                  .map((group) => (
-                    <option key={group.id} value={group.id}>
-                      {group.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
+            {groupDetailView ? (
+              <div className="quick-chat-group-label">
+                <span className="field-label">Current group</span>
+                <strong>{groups.find((group) => group.id === groupDetailView)?.name || 'Group'}</strong>
+              </div>
+            ) : (
+              <div className="form-vertical">
+                <label className="field-label">Select group</label>
+                <select
+                  value={quickChatGroupId}
+                  onChange={(event) => setQuickChatGroupId(event.target.value)}
+                >
+                  {groups
+                    .filter((group) => (group.memberIds || []).includes(currentUserId))
+                    .map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
 
             <div className="quick-chat-messages">
               {quickChatGroupId && (groupChats[quickChatGroupId] || []).length === 0 && <div className="muted">No messages yet.</div>}
@@ -4039,7 +4126,7 @@ async function handleSettleUp(expenseId: string) {
       <button
         className="fab fab-chat"
         title="Open group chat"
-        onClick={() => setShowQuickGroupChat(true)}
+        onClick={() => openQuickGroupChat(groupDetailView || undefined)}
       >
         💬
       </button>
@@ -4077,6 +4164,17 @@ async function handleSettleUp(expenseId: string) {
                 onChange={(e) => setExpenseDescription(e.target.value)}
                 required
               />
+              <select
+                value={expenseTag}
+                onChange={(e) => setExpenseTag(e.target.value)}
+              >
+                <option value="Food & Drinks">Food & Drinks</option>
+                <option value="Shopping">Shopping</option>
+                <option value="Travel">Travel</option>
+                <option value="Entertainment">Entertainment</option>
+                <option value="Bills">Bills</option>
+                <option value="Others">Others</option>
+              </select>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <input
                   type="number"
@@ -4337,6 +4435,7 @@ async function handleSettleUp(expenseId: string) {
                 <button type="button" onClick={() => {
                   setEditingExpense(null)
                   setExpenseDescription('')
+                  setExpenseTag('Others')
                   setExpenseAmount('')
                   setExpenseImageUrl('')
                   setIsRecurringExpense(false)

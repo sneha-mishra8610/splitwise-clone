@@ -70,6 +70,7 @@ public class ExpenseService {
     private Map<String, Object> extractExpenseFields(Expense expense) {
     Map<String, Object> map = new HashMap<>();
     map.put("description", expense.getDescription());
+    map.put("tag", expense.getTag());
     map.put("amount", expense.getAmount());
     map.put("currency", expense.getCurrency());
     return map;
@@ -117,6 +118,11 @@ public class ExpenseService {
     }
 
     private void normalizeExpense(Expense expense) {
+        if (expense.getTag() == null || expense.getTag().isBlank()) {
+            expense.setTag("Others");
+        } else {
+            expense.setTag(expense.getTag().trim());
+        }
         if (expense.getCurrency() == null) {
             expense.setCurrency("INR");
         }
@@ -211,6 +217,7 @@ public class ExpenseService {
     private Expense buildGeneratedExpense(Expense template, Instant occurrenceDate) {
         Expense generated = new Expense();
         generated.setDescription(template.getDescription());
+        generated.setTag(template.getTag());
         generated.setAmount(template.getAmount());
         generated.setCurrency(template.getCurrency());
         generated.setPayerId(template.getPayerId());

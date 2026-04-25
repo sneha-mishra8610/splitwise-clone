@@ -25,6 +25,7 @@ public class Expense {
     @Id
     private String id;
     private String description;
+    private String tag;
     private BigDecimal amount;
     private String currency = "INR";
     private String payerId;
@@ -89,6 +90,14 @@ public class Expense {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getTag() {
+        return tag;
+    }
+
+    public void setTag(String tag) {
+        this.tag = tag;
     }
 
     public BigDecimal getAmount() {
@@ -234,6 +243,7 @@ public class Expense {
         Expense expense = (Expense) o;
         return Objects.equals(id, expense.id) &&
                 Objects.equals(description, expense.description) &&
+                Objects.equals(tag, expense.tag) &&
                 Objects.equals(amount, expense.amount) &&
                 Objects.equals(currency, expense.currency) &&
                 Objects.equals(payerId, expense.payerId) &&
@@ -254,7 +264,7 @@ public class Expense {
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, description, amount, currency, payerId, participantIds, groupId, type, createdAt, createdBy, imageUrl, isRecurring, generatedFromRecurringId, recurrenceOccurrenceDate, recurrenceStartDate, recurrenceType, recurrenceInterval, recurrenceEndDate);
+        return Objects.hash(id, description, tag, amount, currency, payerId, participantIds, groupId, type, createdAt, createdBy, imageUrl, isRecurring, generatedFromRecurringId, recurrenceOccurrenceDate, recurrenceStartDate, recurrenceType, recurrenceInterval, recurrenceEndDate);
     }
 
     @Override
@@ -262,6 +272,7 @@ public class Expense {
         return "Expense{" +
                 "id='" + id + '\'' +
                 ", description='" + description + '\'' +
+                ", tag='" + tag + '\'' +
                 ", amount=" + amount +
                 ", currency='" + currency + '\'' +
                 ", payerId='" + payerId + '\'' +
