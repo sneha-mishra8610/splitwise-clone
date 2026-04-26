@@ -256,7 +256,6 @@ function App() {
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null)
   const [dashboardLoading, setDashboardLoading] = useState(false)
   const [dashboardError, setDashboardError] = useState('')
-
   async function handleSendExpenseChatMessage(expenseId: string) {
     const input = expenseChatInputs[expenseId]?.trim();
     if (!input) return;
@@ -493,7 +492,28 @@ function App() {
   const [selectedBudgetPeriod, setSelectedBudgetPeriod] = useState<BudgetPeriod>('MONTHLY')
   const [budgetInput, setBudgetInput] = useState('')
   const [budgetAmount, setBudgetAmount] = useState<number>(0)
-  const [defaultCurrency, setDefaultCurrency] = useState('INR')
+  const [defaultCurrency, setDefaultCurrency] = useState(() => {
+  return localStorage.getItem('defaultCurrency') || 'INR';
+});
+useEffect(() => {
+  localStorage.setItem('defaultCurrency', defaultCurrency);
+}, [defaultCurrency]);
+  const [exchangeRates, setExchangeRates] = useState<{ [key: string]: number }>({ INR: 1 });
+    useEffect(() => {
+      if (defaultCurrency !== 'INR') {
+        fetch('https://api.exchangerate-api.com/v4/latest/INR')
+          .then(res => res.json())
+          .then(data => setExchangeRates(data.rates))
+          .catch(() => setExchangeRates({ INR: 1 }));
+      } else {
+        setExchangeRates({ INR: 1 });
+      }
+    }, [defaultCurrency]);
+
+    function convertINR(amount: number, toCurrency: string): number {
+      const rate = exchangeRates[toCurrency] || 1;
+      return amount * rate;
+    }
   const [settlementRemindersEnabled, setSettlementRemindersEnabled] = useState(true)
   const [reminderDelayDays, setReminderDelayDays] = useState<'3' | '5' | '7'>('5')
   const [defaultSplitMethod, setDefaultSplitMethod] = useState<'equal' | 'unequal' | 'percentage'>('equal')
@@ -1433,9 +1453,9 @@ async function handleSettleUp(expenseId: string) {
       ? expenses.filter((expense) => expense.payerId === focusParticipant.id).reduce((sum, expense) => sum + expense.amount, 0)
       : Math.max(0, totalSpent - youSpent)
     const balanceDescriptor = netBalance > 0.009
-      ? `You are owed ${formatMoney(netBalance)}`
+      ? `You are owed ${getCurrencySymbol(defaultCurrency)}${convertINR(netBalance, defaultCurrency).toFixed(2)}`
       : netBalance < -0.009
-      ? `You owe ${formatMoney(Math.abs(netBalance))}`
+      ? `You owe ${getCurrencySymbol(defaultCurrency)}${convertINR(Math.abs(netBalance), defaultCurrency).toFixed(2)}`
       : 'All balances are settled'
 
     const balanceCardNote = focusParticipant
@@ -1475,7 +1495,7 @@ async function handleSettleUp(expenseId: string) {
             <div className="workspace-stat-icon workspace-stat-icon-purple">□</div>
             <div>
               <span className="workspace-stat-label">Total Spent</span>
-              <strong className="workspace-stat-value">{formatMoney(totalSpent)}</strong>
+              <strong className="workspace-stat-value">{getCurrencySymbol(defaultCurrency)}{convertINR(totalSpent, defaultCurrency).toFixed(2)}</strong>
               <span className="workspace-stat-note">All time</span>
             </div>
           </article>
@@ -1483,7 +1503,7 @@ async function handleSettleUp(expenseId: string) {
             <div className="workspace-stat-icon workspace-stat-icon-blue">▣</div>
             <div>
               <span className="workspace-stat-label">You Spent</span>
-              <strong className="workspace-stat-value">{formatMoney(youSpent)}</strong>
+              <strong className="workspace-stat-value">{getCurrencySymbol(defaultCurrency)}{convertINR(youSpent, defaultCurrency).toFixed(2)}</strong>
               <span className="workspace-stat-note">
                 {totalSpent > 0 ? `${((youSpent / totalSpent) * 100).toFixed(1)}% of total` : 'No spends yet'}
               </span>
@@ -1493,7 +1513,7 @@ async function handleSettleUp(expenseId: string) {
             <div className="workspace-stat-icon workspace-stat-icon-pink">◌</div>
             <div>
               <span className="workspace-stat-label">{accentLabel || (focusParticipant ? `${focusParticipant.name} Spent` : 'Others Spent')}</span>
-              <strong className="workspace-stat-value">{formatMoney(secondarySpent)}</strong>
+              <strong className="workspace-stat-value">{getCurrencySymbol(defaultCurrency)}{convertINR(secondarySpent, defaultCurrency).toFixed(2)}</strong>
               <span className="workspace-stat-note">
                 {totalSpent > 0 ? `${((secondarySpent / totalSpent) * 100).toFixed(1)}% of total` : 'No spends yet'}
               </span>
@@ -1504,7 +1524,7 @@ async function handleSettleUp(expenseId: string) {
             <div>
               <span className="workspace-stat-label">Your Balance</span>
               <strong className={`workspace-stat-value ${netBalance < -0.009 ? 'negative' : netBalance > 0.009 ? 'positive' : ''}`}>
-                {netBalance > 0.009 ? '+' : netBalance < -0.009 ? '-' : ''}{formatMoney(Math.abs(netBalance))}
+                {netBalance > 0.009 ? '+' : netBalance < -0.009 ? '-' : ''}{getCurrencySymbol(defaultCurrency)}{convertINR(Math.abs(netBalance), defaultCurrency).toFixed(2)}
               </strong>
               <span className="workspace-stat-note">{balanceCardNote}</span>
             </div>
@@ -1543,7 +1563,7 @@ async function handleSettleUp(expenseId: string) {
                 }}
               >
                 <div className="workspace-donut-center">
-                  <strong>{formatMoney(totalSpent)}</strong>
+                  <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(totalSpent, defaultCurrency).toFixed(2)}</strong>
                   <span>Total</span>
                 </div>
               </div>
@@ -1556,7 +1576,7 @@ async function handleSettleUp(expenseId: string) {
                       <span className="workspace-legend-dot" style={{ background: getCategoryColor(index) }} />
                       <div>
                         <strong>{entry.name}</strong>
-                        <span>{formatMoney(entry.total)} ({totalSpent ? ((entry.total / totalSpent) * 100).toFixed(1) : '0.0'}%)</span>
+                        <span>{getCurrencySymbol(defaultCurrency)}{convertINR(entry.total, defaultCurrency).toFixed(2)} ({totalSpent ? ((entry.total / totalSpent) * 100).toFixed(1) : '0.0'}%)</span>
                       </div>
                     </div>
                   ))
@@ -1593,7 +1613,7 @@ async function handleSettleUp(expenseId: string) {
                     <div key={entry.id} className="workspace-balance-row">
                       <span>{entry.name}</span>
                       <strong className={entry.amount >= 0 ? 'positive' : 'negative'}>
-                        {entry.amount >= 0 ? '+' : '-'}{formatMoney(Math.abs(entry.amount))}
+                        {entry.amount >= 0 ? '+' : '-'}{getCurrencySymbol(defaultCurrency)}{convertINR(Math.abs(entry.amount), defaultCurrency).toFixed(2)}
                       </strong>
                     </div>
                   ))}
@@ -1638,7 +1658,7 @@ async function handleSettleUp(expenseId: string) {
                       <span className="workspace-legend-dot" style={{ background: getCategoryColor(index) }} />
                       <div>
                         <strong>{entry.label}</strong>
-                        <span>{formatMoney(entry.total)} ({totalSpent ? ((entry.total / totalSpent) * 100).toFixed(1) : '0.0'}%)</span>
+                        <span>{getCurrencySymbol(defaultCurrency)}{convertINR(entry.total, defaultCurrency).toFixed(2)} ({totalSpent ? ((entry.total / totalSpent) * 100).toFixed(1) : '0.0'}%)</span>
                       </div>
                     </div>
                   ))
@@ -1724,16 +1744,16 @@ async function handleSettleUp(expenseId: string) {
                           </div>
                         </td>
                         <td>
-                          <strong>{formatMoney(expense.amount, expense.currency)}</strong>
+                          <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(expense.amount, defaultCurrency).toFixed(2)}</strong>
                           <span>{expense.currency}</span>
                         </td>
                         <td>{payerName(expense.payerId)}</td>
                         <td>
                           {youOwe && (
-                            <strong className="negative">-{formatMoney(userShare(expense), expense.currency)}</strong>
+                            <strong className="negative">-{getCurrencySymbol(defaultCurrency)}{convertINR(userShare(expense), defaultCurrency).toFixed(2)}</strong>
                           )}
                           {owedByOthers && (
-                            <strong className="positive">+{formatMoney(othersOweTotal(expense), expense.currency)}</strong>
+                            <strong className="positive">+{getCurrencySymbol(defaultCurrency)}{convertINR(othersOweTotal(expense), defaultCurrency).toFixed(2)}</strong>
                           )}
                           {!youOwe && !owedByOthers && <span>-</span>}
                         </td>
@@ -2426,17 +2446,17 @@ async function handleSettleUp(expenseId: string) {
                   <div className="dashboard-stats">
                     <article className="panel dashboard-stat-card">
                       <span className="dashboard-stat-label">You owe</span>
-                      <strong className="dashboard-stat-value negative">{getCurrencySymbol('INR')}{dashboardSummary.totalUserOwes.toFixed(2)}</strong>
+                      <strong className="dashboard-stat-value negative">{getCurrencySymbol(defaultCurrency)}{convertINR(dashboardSummary.totalUserOwes, defaultCurrency).toFixed(2)}</strong>
                       <span className="dashboard-stat-note">{dashboardActionFriends.length} friend{dashboardActionFriends.length === 1 ? '' : 's'} need settlement</span>
                     </article>
                     <article className="panel dashboard-stat-card">
                       <span className="dashboard-stat-label">Owed to you</span>
-                      <strong className="dashboard-stat-value positive">{getCurrencySymbol('INR')}{dashboardSummary.totalOwedToUser.toFixed(2)}</strong>
+                      <strong className="dashboard-stat-value positive">{getCurrencySymbol(defaultCurrency)}{convertINR(dashboardSummary.totalOwedToUser, defaultCurrency).toFixed(2)}</strong>
                       <span className="dashboard-stat-note">{dashboardFriendBalances.filter((friend) => friend.balance > 0).length} incoming balance{dashboardFriendBalances.filter((friend) => friend.balance > 0).length === 1 ? '' : 's'}</span>
                     </article>
                     <article className="panel dashboard-stat-card">
                       <span className="dashboard-stat-label">Total spent</span>
-                      <strong className="dashboard-stat-value">{getCurrencySymbol('INR')}{dashboardAnalytics.spent.toFixed(2)}</strong>
+                      <strong className="dashboard-stat-value">{getCurrencySymbol(defaultCurrency)}{convertINR(dashboardAnalytics.spent, defaultCurrency).toFixed(2)}</strong>
                       <span className="dashboard-stat-note">
                         {dashboardBudgetAmount > 0
                           ? `${dashboardBudgetProgress.toFixed(0)}% of ${dashboardPeriodMeta.titleLabel.toLowerCase()} budget used`
@@ -2446,11 +2466,11 @@ async function handleSettleUp(expenseId: string) {
                     <article className="panel dashboard-stat-card">
                       <span className="dashboard-stat-label">{dashboardPeriodMeta.titleLabel} budget</span>
                       <strong className={`dashboard-stat-value ${dashboardBudgetRemaining >= 0 ? 'positive' : 'negative'}`}>
-                        {dashboardBudgetRemaining >= 0 ? '' : '-'}{getCurrencySymbol('INR')}{Math.abs(dashboardBudgetRemaining).toFixed(2)}
+                        {dashboardBudgetRemaining >= 0 ? '' : '-'}{getCurrencySymbol(defaultCurrency)}{Math.abs(convertINR(dashboardBudgetRemaining, defaultCurrency)).toFixed(2)}
                       </strong>
                       <span className="dashboard-stat-note">
                         {dashboardBudgetAmount > 0
-                          ? `${getCurrencySymbol('INR')}${dashboardBudgetAmount.toFixed(2)} budget for ${dashboardAnalytics.periodMeta.label}`
+                          ? `${getCurrencySymbol(defaultCurrency)}${convertINR(dashboardBudgetAmount, defaultCurrency).toFixed(2)} budget for ${dashboardAnalytics.periodMeta.label}`
                           : `Set budget in Account for ${dashboardAnalytics.periodMeta.label}`}
                       </span>
                     </article>
@@ -2468,7 +2488,7 @@ async function handleSettleUp(expenseId: string) {
                             <div
                               className="dashboard-trend-bar"
                               style={{ height: `${Math.max((bucket.total / dashboardAnalytics.max) * 100, bucket.total > 0 ? 8 : 0)}%` }}
-                              title={`${bucket.label}: ${getCurrencySymbol('INR')}${bucket.total.toFixed(2)}`}
+                              title={`${bucket.label}: ${getCurrencySymbol(defaultCurrency)}${convertINR(bucket.total, defaultCurrency).toFixed(2)}`}
                             />
                             <span>{bucket.label}</span>
                           </div>
@@ -2497,12 +2517,12 @@ async function handleSettleUp(expenseId: string) {
                           <div className="dashboard-legend-row">
                             <span className="dashboard-legend-dot personal-dot" />
                             <span>Personal</span>
-                            <strong>{getCurrencySymbol('INR')}{expenseMix.personal.toFixed(2)}</strong>
+                            <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(expenseMix.personal, defaultCurrency).toFixed(2)}</strong>
                           </div>
                           <div className="dashboard-legend-row">
                             <span className="dashboard-legend-dot group-dot" />
                             <span>Group share</span>
-                            <strong>{getCurrencySymbol('INR')}{expenseMix.group.toFixed(2)}</strong>
+                            <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(expenseMix.group, defaultCurrency).toFixed(2)}</strong>
                           </div>
                         </div>
                       </div>
@@ -2523,9 +2543,9 @@ async function handleSettleUp(expenseId: string) {
                               <strong>{friend.name}</strong>
                               <span className={friend.balance > 0 ? 'positive' : friend.balance < 0 ? 'negative' : 'muted'}>
                                 {friend.balance > 0
-                                  ? `owes you ${getCurrencySymbol('INR')}${friend.balance.toFixed(2)}`
+                                  ? `owes you ${getCurrencySymbol(defaultCurrency)}${convertINR(friend.balance, defaultCurrency).toFixed(2)}`
                                   : friend.balance < 0
-                                  ? `you owe ${getCurrencySymbol('INR')}${Math.abs(friend.balance).toFixed(2)}`
+                                  ? `you owe ${getCurrencySymbol(defaultCurrency)}${Math.abs(convertINR(friend.balance, defaultCurrency)).toFixed(2)}`
                                   : 'settled'}
                               </span>
                             </div>
@@ -2696,9 +2716,9 @@ async function handleSettleUp(expenseId: string) {
                         <div className="friends-balance-area">
                           <span className={`friends-balance ${friendBalances[f.id] > 0 ? 'positive' : friendBalances[f.id] < 0 ? 'negative' : ''}`}>
                             {friendBalances[f.id] > 0
-                              ? `Owes you ${getCurrencySymbol('INR')}${Number(friendBalances[f.id]).toFixed(2)}`
+                              ? `Owes you ${getCurrencySymbol(defaultCurrency)}${convertINR(Number(friendBalances[f.id]), defaultCurrency).toFixed(2)}`
                               : friendBalances[f.id] < 0
-                              ? `You owe ${getCurrencySymbol('INR')}${Math.abs(Number(friendBalances[f.id])).toFixed(2)}`
+                              ? `You owe ${getCurrencySymbol(defaultCurrency)}${Math.abs(convertINR(Number(friendBalances[f.id]), defaultCurrency)).toFixed(2)}`
                               : 'Settled'}
                           </span>
                           <div className="friends-inline-actions">
@@ -2963,8 +2983,8 @@ async function handleSettleUp(expenseId: string) {
                       <div className="groups-summary-body">
                         <strong>{group.name}</strong>
                         <span>{group.memberIds.length} members · {latestLabel}</span>
-                        <div className="groups-summary-metric">Total: {getCurrencySymbol('INR')}{total.toFixed(2)}</div>
-                        <div className="groups-summary-metric">Your share: {getCurrencySymbol('INR')}{yourShare.toFixed(2)}</div>
+                        <div className="groups-summary-metric">Total: {getCurrencySymbol(defaultCurrency)}{convertINR(total, defaultCurrency).toFixed(2)}</div>
+                        <div className="groups-summary-metric">Your share: {getCurrencySymbol(defaultCurrency)}{convertINR(yourShare, defaultCurrency).toFixed(2)}</div>
                         <div className={`groups-summary-status ${unsettledCount > 0 ? 'negative' : 'positive'}`}>
                           {unsettledCount > 0 ? `${unsettledCount} unsettled` : 'All settled'}
                         </div>
@@ -3296,17 +3316,17 @@ async function handleSettleUp(expenseId: string) {
               <div className="expenses-stat-grid">
                 <article className="panel expenses-stat-card">
                   <span className="expenses-stat-label">Total logged</span>
-                  <strong className="expenses-stat-value">{getCurrencySymbol('INR')}{expenseStats.totalLogged.toFixed(2)}</strong>
+                  <strong className="expenses-stat-value">{getCurrencySymbol(defaultCurrency)}{convertINR(expenseStats.totalLogged, defaultCurrency).toFixed(2)}</strong>
                   <span className="expenses-stat-note">Across personal, group, and recurring items</span>
                 </article>
                 <article className="panel expenses-stat-card">
                   <span className="expenses-stat-label">You owe</span>
-                  <strong className="expenses-stat-value negative">{getCurrencySymbol('INR')}{expenseStats.youOwe.toFixed(2)}</strong>
+                  <strong className="expenses-stat-value negative">{getCurrencySymbol(defaultCurrency)}{convertINR(expenseStats.youOwe, defaultCurrency).toFixed(2)}</strong>
                   <span className="expenses-stat-note">Outstanding balances waiting on you</span>
                 </article>
                 <article className="panel expenses-stat-card">
                   <span className="expenses-stat-label">Owed to you</span>
-                  <strong className="expenses-stat-value positive">{getCurrencySymbol('INR')}{expenseStats.owedToYou.toFixed(2)}</strong>
+                  <strong className="expenses-stat-value positive">{getCurrencySymbol(defaultCurrency)}{convertINR(expenseStats.owedToYou, defaultCurrency).toFixed(2)}</strong>
                   <span className="expenses-stat-note">Incoming settlements from shared expenses</span>
                 </article>
                 <article className="panel expenses-stat-card">
@@ -3392,10 +3412,10 @@ async function handleSettleUp(expenseId: string) {
                                       <>
                                         <span>{shareLabel(expense)}</span>
                                         {expense.payerId === currentUserId && (expense.participantIds || []).length > 1 && expense.expenseStatus !== 'Settled' && (
-                                          <span className="positive">Others owe {getCurrencySymbol(expense.currency)}{othersOweTotal(expense).toFixed(2)}</span>
+                                          <span className="positive">Others owe {getCurrencySymbol(defaultCurrency)}{convertINR(othersOweTotal(expense), defaultCurrency).toFixed(2)}</span>
                                         )}
                                         {expense.payerId !== currentUserId && (expense.participantIds || []).includes(currentUserId) && !expense.settledByUser?.[currentUserId] && (
-                                          <span className="negative">You owe {getCurrencySymbol(expense.currency)}{userShare(expense).toFixed(2)}</span>
+                                          <span className="negative">You owe {getCurrencySymbol(defaultCurrency)}{convertINR(userShare(expense), defaultCurrency).toFixed(2)}</span>
                                         )}
                                       </>
                                     ) : (
@@ -3406,9 +3426,9 @@ async function handleSettleUp(expenseId: string) {
                               </div>
 
                               <div className="expense-stream-side">
-                                <strong>{getCurrencySymbol(expense.currency)}{isGroupExpense ? userShare(expense).toFixed(2) : expense.amount.toFixed(2)}</strong>
+                                <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(isGroupExpense ? userShare(expense) : expense.amount, defaultCurrency).toFixed(2)}</strong>
                                 <span className="muted">
-                                  {isGroupExpense ? `your share of ${getCurrencySymbol(expense.currency)}${expense.amount.toFixed(2)}` : expense.currency}
+                                  {isGroupExpense ? `your share of ${getCurrencySymbol(defaultCurrency)}${convertINR(expense.amount, defaultCurrency).toFixed(2)}` : defaultCurrency}
                                 </span>
                                 <div className="expense-stream-actions">
                                   {isGroupExpense && expense.payerId !== currentUserId && (expense.participantIds || []).includes(currentUserId) && !expense.settledByUser?.[currentUserId] && (
@@ -3865,16 +3885,16 @@ async function handleSettleUp(expenseId: string) {
                       <div className="account-budget-stats">
                         <div className="account-budget-kpi">
                           <span>Budget</span>
-                          <strong>{getCurrencySymbol('INR')}{budgetAmount.toFixed(2)}</strong>
+                          <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(budgetAmount, defaultCurrency).toFixed(2)}</strong>
                         </div>
                         <div className="account-budget-kpi">
                           <span>Spent</span>
-                          <strong>{getCurrencySymbol('INR')}{spentForSelectedPeriod.toFixed(2)}</strong>
+                          <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(spentForSelectedPeriod, defaultCurrency).toFixed(2)}</strong>
                         </div>
                         <div className="account-budget-kpi">
                           <span>Remaining</span>
                           <strong className={budgetRemaining >= 0 ? 'positive' : 'negative'}>
-                            {budgetRemaining >= 0 ? '' : '-'}{getCurrencySymbol('INR')}{Math.abs(budgetRemaining).toFixed(2)}
+                            {budgetRemaining >= 0 ? '' : '-'}{getCurrencySymbol(defaultCurrency)}{Math.abs(convertINR(budgetRemaining, defaultCurrency)).toFixed(2)}
                           </strong>
                         </div>
                       </div>
