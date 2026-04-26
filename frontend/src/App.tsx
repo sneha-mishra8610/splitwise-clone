@@ -1583,18 +1583,7 @@ async function handleSettleUp(expenseId: string) {
                   {topSettlement ? topSettlement.initials : (focusParticipant ? getInitials(focusParticipant.name) : 'GR')}
                 </div>
               </div>
-              <button
-                type="button"
-                className="workspace-primary-btn workspace-primary-btn-full"
-                onClick={() => {
-                  if (selectedWorkspaceExpense) {
-                    handleSettleUp(selectedWorkspaceExpense.id)
-                  }
-                }}
-                disabled={!selectedCanSettle}
-              >
-                Settle Up
-              </button>
+              
               {!selectedCanSettle && (
                 <span className="workspace-helper-text">Select an expense you owe to settle it from here.</span>
               )}
@@ -4059,7 +4048,7 @@ async function handleSettleUp(expenseId: string) {
         </main>
       </div>
 
-      {showQuickGroupChat && (
+      {(showQuickGroupChat && (groupDetailView || expenseDetailView)) && (
         <div className="modal-overlay" onClick={() => setShowQuickGroupChat(false)}>
           <div className="modal quick-chat-modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
@@ -4123,13 +4112,15 @@ async function handleSettleUp(expenseId: string) {
         </div>
       )}
 
-      <button
-        className="fab fab-chat"
-        title="Open group chat"
-        onClick={() => openQuickGroupChat(groupDetailView || undefined)}
-      >
-        💬
-      </button>
+      {(groupDetailView || expenseDetailView) && (
+  <button
+    className="fab fab-chat"
+    title="Open group chat"
+    onClick={() => openQuickGroupChat(groupDetailView || undefined)}
+  >
+    💬
+  </button>
+)}
 
       {/* ── FAB (floating + button) ── */}
       <button className="fab" title="Add expense" onClick={() => {

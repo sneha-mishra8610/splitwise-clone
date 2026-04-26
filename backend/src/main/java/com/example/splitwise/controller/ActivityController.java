@@ -32,7 +32,6 @@ public class ActivityController {
         expenseService.generateDueRecurringExpenses();
         Pageable pageable = PageRequest.of(page, size);
         List<Activity> all = activityRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
-        // Deduplicate settle activities (keep only the first per expense+type+user)
         Set<String> seen = new HashSet<>();
         List<Activity> deduped = new ArrayList<>();
         List<String> toDelete = new ArrayList<>();
