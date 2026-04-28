@@ -248,7 +248,7 @@ function App() {
   const [pendingExpenses, setPendingExpenses] = useState<Expense[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [notificationError, setNotificationError] = useState('');
-
+  
 
   const currentUser: User | null = users.find((u) => u.id === currentUserId) || null;
   const currentUserName = currentUser?.name || 'You';
@@ -514,6 +514,8 @@ useEffect(() => {
       const rate = exchangeRates[toCurrency] || 1;
       return amount * rate;
     }
+  
+  const [budgetSummaryCurrency, setBudgetSummaryCurrency] = useState<string>(defaultCurrency);
   const [settlementRemindersEnabled, setSettlementRemindersEnabled] = useState(true)
   const [reminderDelayDays, setReminderDelayDays] = useState<'3' | '5' | '7'>('5')
   const [defaultSplitMethod, setDefaultSplitMethod] = useState<'equal' | 'unequal' | 'percentage'>('equal')
@@ -1069,7 +1071,7 @@ const handleUnflagExpense = React.useCallback(async (expenseId: string) => {
       }
       resolvedGroupId = existingGroup!.id
     }
-
+    
     const useGroup = isGroupExpense || isFriendExpense
     const payer = useGroup && expensePayerId ? expensePayerId : currentUserId
     const payload: Partial<Expense> & { [key: string]: unknown } = {
@@ -3832,16 +3834,16 @@ async function handleSettleUp(expenseId: string) {
                       <div className="account-financial-grid">
                         <article className="account-financial-pill">
                           <span>Paid</span>
-                          <strong>{formatAccountMoney(totalPaid)}</strong>
+                          <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(totalPaid, defaultCurrency).toFixed(2)}</strong>
                         </article>
                         <article className="account-financial-pill">
                           <span>Received</span>
-                          <strong>{formatAccountMoney(totalReceived)}</strong>
+                          <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(totalReceived, defaultCurrency).toFixed(2)}</strong>
                         </article>
                         <article className="account-financial-pill">
                           <span>Net</span>
                           <strong className={netSummary >= 0 ? 'positive' : 'negative'}>
-                            {netSummary >= 0 ? '+' : '-'}{formatAccountMoney(Math.abs(netSummary))}
+                            {netSummary >= 0 ? '+' : '-'}{getCurrencySymbol(defaultCurrency)}{convertINR(Math.abs(netSummary), defaultCurrency).toFixed(2)}
                           </strong>
                         </article>
                       </div>
@@ -3880,25 +3882,31 @@ async function handleSettleUp(expenseId: string) {
                           />
                           <button type="submit">Save</button>
                         </div>
+                        <div className="account-budget-currency-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <span>Summary currency:</span>
+                          <select value={budgetSummaryCurrency} onChange={e => setBudgetSummaryCurrency(e.target.value)}>
+                            <option value="INR">INR ₹</option>
+                            <option value="USD">USD $</option>
+                            <option value="EUR">EUR €</option>
+                            <option value="GBP">GBP £</option>
+                            <option value="JPY">JPY ¥</option>
+                          </select>
+                        </div>
                       </form>
 
-                      <div className="account-budget-stats">
-                        <div className="account-budget-kpi">
-                          <span>Budget</span>
-                          <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(budgetAmount, defaultCurrency).toFixed(2)}</strong>
+                      <div className="account-budget-horizontal-stats" style={{ display: 'flex', gap: '2rem', margin: '12px 0 0 0', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span style={{ fontSize: '0.85rem', color: 'var(--muted-text, #aaa)' }}>Used</span><br />
+                          <strong>{getCurrencySymbol(budgetSummaryCurrency)}{convertINR(spentForSelectedPeriod, budgetSummaryCurrency).toFixed(2)}</strong>
                         </div>
-                        <div className="account-budget-kpi">
-                          <span>Spent</span>
-                          <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(spentForSelectedPeriod, defaultCurrency).toFixed(2)}</strong>
-                        </div>
-                        <div className="account-budget-kpi">
-                          <span>Remaining</span>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '0.85rem', color: 'var(--muted-text, #aaa)' }}>Left</span><br />
                           <strong className={budgetRemaining >= 0 ? 'positive' : 'negative'}>
-                            {budgetRemaining >= 0 ? '' : '-'}{getCurrencySymbol(defaultCurrency)}{Math.abs(convertINR(budgetRemaining, defaultCurrency)).toFixed(2)}
+                            {budgetRemaining >= 0 ? '' : '-'}{getCurrencySymbol(budgetSummaryCurrency)}{Math.abs(convertINR(budgetRemaining, budgetSummaryCurrency)).toFixed(2)}
                           </strong>
                         </div>
                       </div>
-
+                      
                       <div className="account-budget-progress">
                         <div className="account-budget-progress-bar">
                           <div className="account-budget-progress-fill" style={{ width: `${budgetProgress}%` }} />

@@ -1,3 +1,14 @@
+.account-budget-kpi strong {
+  overflow: visible !important;
+  text-overflow: unset !important;
+  white-space: normal !important;
+  word-break: break-all !important;
+}
+.account-budget-kpi {
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
 /* ── Root ── */
 :root {
   --primary: #6c5ce7;
@@ -3324,4 +3335,5 @@ select:focus {
   .account-budget-entry button {
     width: 100%;
   }
+
 }
