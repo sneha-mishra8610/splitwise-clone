@@ -26,6 +26,21 @@
   --border-light: #ddd2ff;
   --text-light: #2f2050;
   --text-muted-light: rgba(47, 32, 80, 0.66);
+
+  --expense-accent: #6c5ce7;
+  --expense-accent-hover: #5b4bd6;
+  --expense-accent-soft-dark: rgba(108, 92, 231, 0.22);
+  --expense-accent-soft-light: rgba(108, 92, 231, 0.06);
+  --expense-mint: #8be0cb;
+  --expense-surface-dark: rgba(255, 255, 255, 0.03);
+  --expense-surface-dark-strong: rgba(12, 12, 24, 0.58);
+  --expense-border-dark: rgba(255, 255, 255, 0.06);
+  --expense-border-dark-strong: rgba(255, 255, 255, 0.08);
+  --expense-muted-dark: rgba(255, 255, 255, 0.62);
+  --expense-surface-light: rgba(108, 92, 231, 0.04);
+  --expense-surface-light-soft: rgba(108, 92, 231, 0.03);
+  --expense-border-light: rgba(108, 92, 231, 0.12);
+  --expense-muted-light: rgba(47, 32, 80, 0.66);
 }
 
 #root {
@@ -191,6 +206,8 @@
   gap: 1.2rem;
   padding: 1.2rem 1.5rem;
   align-items: flex-start;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .sidebar {
@@ -271,6 +288,7 @@
   flex-direction: column;
   gap: 1rem;
   min-width: 0;
+  width: 100%;
 }
 
 /* ── Panels ── */
@@ -855,7 +873,7 @@ select:focus {
     radial-gradient(circle at 10% -20%, rgba(108, 92, 231, 0.16), transparent 42%),
     radial-gradient(circle at 95% -10%, rgba(108, 92, 231, 0.09), transparent 28%),
     var(--bg-light);
-  color: var(--text-light);
+  color: #000 !important;
 }
 
 .app.light-mode .app-header {
@@ -1153,6 +1171,22 @@ select:focus {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.dashboard-mix-panel-clickable {
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.dashboard-mix-panel-clickable:hover {
+  border-color: rgba(108, 92, 231, 0.45);
+  box-shadow: 0 14px 28px rgba(9, 8, 20, 0.18);
+  transform: translateY(-1px);
+}
+
+.dashboard-mix-panel-clickable:focus-visible {
+  outline: 3px solid rgba(108, 92, 231, 0.26);
+  outline-offset: 3px;
 }
 
 .dashboard-donut {
@@ -3337,3 +3371,261 @@ select:focus {
   }
 
 }
+
+/* Shared expense palette for every major section */
+.dashboard-breadcrumb,
+.dashboard-subtitle,
+.dashboard-stat-label,
+.dashboard-stat-note,
+.dashboard-trend-col span,
+.dashboard-donut-hole span,
+.friends-subtitle,
+.friends-person-meta span,
+.friends-field span,
+.friends-awaiting,
+.groups-subtitle,
+.groups-summary-body span,
+.groups-summary-metric,
+.workspace-breadcrumb,
+.workspace-subtitle,
+.workspace-stat-label,
+.workspace-stat-note,
+.workspace-panel-badge,
+.workspace-panel-head span,
+.workspace-legend-item span,
+.workspace-helper-text,
+.workspace-expense-cell span,
+.workspace-table td span,
+.workspace-table th,
+.workspace-settlement-eyebrow,
+.workspace-donut-center span,
+.activity-subtitle,
+.activity-stat-label,
+.activity-stat-note,
+.activity-sort,
+.activity-row-main span,
+.activity-empty-state,
+.account-subtitle,
+.account-budget-kpi span,
+.account-profile-copy p,
+.account-financial-pill span,
+.account-form-label,
+.account-session-row p {
+  color: var(--expense-muted-dark);
+}
+
+.dashboard-range,
+.dashboard-donut-hole,
+.dashboard-avatar,
+.groups-new-card,
+.workspace-panel-badge,
+.workspace-back-btn,
+.workspace-settlement-line span,
+.activity-filter-chip,
+.activity-day-group,
+.activity-row,
+.account-budget-kpi,
+.account-financial-pill,
+.account-form-row,
+.account-session-row {
+  background: var(--expense-surface-dark);
+  border-color: var(--expense-border-dark);
+}
+
+.workspace-header,
+.workspace-stat-card,
+.workspace-panel {
+  background: linear-gradient(180deg, rgba(35, 35, 54, 0.95), rgba(28, 28, 45, 0.95));
+  border-color: var(--border-dark);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+}
+
+.workspace-donut::after {
+  background: linear-gradient(180deg, rgba(35, 35, 54, 0.98), rgba(28, 28, 45, 0.98));
+}
+
+.workspace-primary-btn,
+.friends-primary-btn {
+  background: linear-gradient(135deg, var(--expense-accent), var(--expense-accent-hover));
+  box-shadow: 0 16px 30px rgba(108, 92, 231, 0.28);
+}
+
+.range-pill-active,
+.activity-filter-chip-active {
+  background: var(--expense-accent-soft-dark);
+  border-color: rgba(108, 92, 231, 0.38);
+  color: #fff;
+}
+
+.friends-avatar,
+.groups-summary-icon,
+.activity-day-icon,
+.workspace-avatar-badge,
+.workspace-stat-icon-purple {
+  background: rgba(108, 92, 231, 0.22);
+  color: #cec4ff;
+}
+
+.invite-avatar,
+.request-avatar,
+.workspace-avatar-badge-secondary,
+.workspace-stat-icon-blue,
+.workspace-stat-icon-pink,
+.workspace-stat-icon-amber,
+.workspace-stat-icon-green {
+  background: rgba(139, 224, 203, 0.14);
+  color: var(--expense-mint);
+}
+
+.workspace-table-row:hover,
+.workspace-table-row-active {
+  background: rgba(108, 92, 231, 0.08);
+}
+
+.workspace-settlement-line {
+  border-top-color: rgba(108, 92, 231, 0.8);
+}
+
+.activity-category-expense,
+.activity-category-settlement,
+.activity-category-group,
+.activity-category-friend {
+  background: rgba(108, 92, 231, 0.14);
+  color: #c8bdff;
+}
+
+.app.light-mode .dashboard-breadcrumb,
+.app.light-mode .dashboard-subtitle,
+.app.light-mode .dashboard-stat-label,
+.app.light-mode .dashboard-stat-note,
+.app.light-mode .dashboard-trend-col span,
+.app.light-mode .dashboard-donut-hole span,
+.app.light-mode .friends-subtitle,
+.app.light-mode .friends-person-meta span,
+.app.light-mode .friends-field span,
+.app.light-mode .friends-awaiting,
+.app.light-mode .groups-subtitle,
+.app.light-mode .groups-summary-body span,
+.app.light-mode .groups-summary-metric,
+.app.light-mode .workspace-breadcrumb,
+.app.light-mode .workspace-subtitle,
+.app.light-mode .workspace-stat-label,
+.app.light-mode .workspace-stat-note,
+.app.light-mode .workspace-panel-badge,
+.app.light-mode .workspace-panel-head span,
+.app.light-mode .workspace-legend-item span,
+.app.light-mode .workspace-helper-text,
+.app.light-mode .workspace-expense-cell span,
+.app.light-mode .workspace-table td span,
+.app.light-mode .workspace-table th,
+.app.light-mode .workspace-settlement-eyebrow,
+.app.light-mode .workspace-donut-center span,
+.app.light-mode .activity-subtitle,
+.app.light-mode .activity-stat-label,
+.app.light-mode .activity-stat-note,
+.app.light-mode .activity-sort,
+.app.light-mode .activity-row-main span,
+.app.light-mode .activity-empty-state,
+.app.light-mode .account-subtitle,
+.app.light-mode .account-budget-kpi span,
+.app.light-mode .account-profile-copy p,
+.app.light-mode .account-financial-pill span,
+.app.light-mode .account-form-label,
+.app.light-mode .account-session-row p {
+  color: var(--expense-muted-light);
+}
+
+.app.light-mode .dashboard-range,
+.app.light-mode .dashboard-donut-hole,
+.app.light-mode .dashboard-avatar,
+.app.light-mode .groups-new-card,
+.app.light-mode .workspace-panel-badge,
+.app.light-mode .workspace-back-btn,
+.app.light-mode .workspace-settlement-line span,
+.app.light-mode .activity-filter-chip,
+.app.light-mode .activity-day-group,
+.app.light-mode .activity-row,
+.app.light-mode .account-budget-kpi,
+.app.light-mode .account-financial-pill,
+.app.light-mode .account-form-row,
+.app.light-mode .account-session-row {
+  background: var(--expense-surface-light);
+  border-color: var(--expense-border-light);
+  color: var(--text-light);
+}
+
+.app.light-mode .workspace-header,
+.app.light-mode .workspace-stat-card,
+.app.light-mode .workspace-panel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(244, 239, 255, 0.96));
+  border-color: rgba(108, 92, 231, 0.14);
+  box-shadow: 0 14px 28px rgba(108, 92, 231, 0.08);
+}
+
+.app.light-mode .workspace-donut::after {
+  background: linear-gradient(180deg, #ffffff, #f5efff);
+}
+
+.app.light-mode .workspace-primary-btn,
+.app.light-mode .friends-primary-btn {
+  background: linear-gradient(135deg, var(--expense-accent), var(--expense-accent-hover));
+}
+
+.app.light-mode .range-pill-active,
+.app.light-mode .activity-filter-chip-active {
+  background: rgba(108, 92, 231, 0.16);
+  color: var(--text-light);
+}
+
+.app.light-mode .friends-avatar,
+.app.light-mode .groups-summary-icon,
+.app.light-mode .activity-day-icon,
+.app.light-mode .workspace-avatar-badge,
+.app.light-mode .workspace-stat-icon-purple {
+  background: rgba(108, 92, 231, 0.12);
+  color: #5e4dcf;
+}
+
+.app.light-mode .invite-avatar,
+.app.light-mode .request-avatar,
+.app.light-mode .workspace-avatar-badge-secondary,
+.app.light-mode .workspace-stat-icon-blue,
+.app.light-mode .workspace-stat-icon-pink,
+.app.light-mode .workspace-stat-icon-amber,
+.app.light-mode .workspace-stat-icon-green {
+  background: rgba(139, 224, 203, 0.16);
+  color: #21745e;
+}
+
+.app.light-mode .workspace-table-row:hover,
+.app.light-mode .workspace-table-row-active {
+  background: rgba(108, 92, 231, 0.06);
+}
+
+.app.light-mode .activity-category-expense,
+.app.light-mode .activity-category-settlement,
+.app.light-mode .activity-category-group,
+.app.light-mode .activity-category-friend {
+  background: rgba(108, 92, 231, 0.1);
+  color: #5e4dcf;
+}
+
+.card:hover,
+.dashboard-stat-card:hover,
+.activity-row:hover,
+.account-form-row:hover,
+.groups-summary-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(108, 92, 231, 0.45) !important;
+  box-shadow: 0 14px 28px rgba(9, 8, 20, 0.28) !important;
+}
+
+.app.light-mode .card:hover,
+.app.light-mode .dashboard-stat-card:hover,
+.app.light-mode .activity-row:hover,
+.app.light-mode .account-form-row:hover,
+.app.light-mode .groups-summary-card:hover {
+  border-color: rgba(108, 92, 231, 0.45) !important;
+  box-shadow: 0 14px 28px rgba(108, 92, 231, 0.12) !important;
+}
+

@@ -55,6 +55,7 @@ type Activity = {
 
 type ActivityFilter = 'ALL' | 'EXPENSE' | 'SETTLEMENT' | 'GROUP' | 'FRIEND'
 type ActivitySortOrder = 'NEWEST' | 'OLDEST'
+type DashboardMixMode = 'TYPE' | 'CATEGORY'
 
 type PendingInvitation = {
   id: string
@@ -488,6 +489,7 @@ function App() {
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>('ALL')
   const [activitySortOrder, setActivitySortOrder] = useState<ActivitySortOrder>('NEWEST')
   const [dashboardPeriod, setDashboardPeriod] = useState<BudgetPeriod>('MONTHLY')
+  const [dashboardMixMode, setDashboardMixMode] = useState<DashboardMixMode>('TYPE')
   const [dashboardBudgetAmount, setDashboardBudgetAmount] = useState<number>(0)
   const [selectedBudgetPeriod, setSelectedBudgetPeriod] = useState<BudgetPeriod>('MONTHLY')
   const [budgetInput, setBudgetInput] = useState('')
@@ -2002,6 +2004,44 @@ async function handleSettleUp(expenseId: string) {
     }
   })()
 
+  const dashboardCategoryMix = (() => {
+    const totals = Object.entries(
+      dashboardExpensePool.reduce<Record<string, number>>((acc, expense) => {
+        if (!expense.createdAt) return acc
+        const createdAt = new Date(expense.createdAt)
+        if (createdAt < dashboardAnalytics.periodMeta.rangeStart || createdAt >= dashboardAnalytics.periodMeta.rangeEnd) return acc
+        const amount = expenseAmountForCurrentUser(expense)
+        if (amount <= 0) return acc
+        const category = getExpenseCategory(expense)
+        acc[category] = (acc[category] || 0) + amount
+        return acc
+      }, {})
+    )
+      .map(([label, total]) => ({ label, total }))
+      .sort((a, b) => b.total - a.total)
+
+    const total = totals.reduce((sum, entry) => sum + entry.total, 0)
+    let cursor = 0
+    const gradient = total > 0
+      ? totals
+          .map((entry, index) => {
+            const startPct = cursor
+            const endPct = cursor + (entry.total / total) * 100
+            cursor = endPct
+            return `${getCategoryColor(index)} ${startPct}% ${endPct}%`
+          })
+          .join(', ')
+      : '#6c5ce7 0 100%'
+
+    return {
+      totals,
+      total,
+      gradient,
+      topCategory: totals[0],
+      topPct: total > 0 && totals[0] ? (totals[0].total / total) * 100 : 0,
+    }
+  })()
+
   const dashboardBudgetRemaining = dashboardBudgetAmount - dashboardAnalytics.spent
   const dashboardBudgetProgress = dashboardBudgetAmount > 0
     ? Math.min((dashboardAnalytics.spent / dashboardBudgetAmount) * 100, 100)
@@ -2498,34 +2538,71 @@ async function handleSettleUp(expenseId: string) {
                       </div>
                     </article>
 
-                    <article className="panel dashboard-mix-panel">
+                    <article
+                      className="panel dashboard-mix-panel dashboard-mix-panel-clickable"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Toggle expense mix to ${dashboardMixMode === 'TYPE' ? 'category-wise spending' : 'personal and group expenses'}`}
+                      onClick={() => setDashboardMixMode((mode) => mode === 'TYPE' ? 'CATEGORY' : 'TYPE')}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          setDashboardMixMode((mode) => mode === 'TYPE' ? 'CATEGORY' : 'TYPE')
+                        }
+                      }}
+                    >
                       <div className="dashboard-panel-head">
                         <h3>Expense mix</h3>
-                        <span className="muted">Personal vs shared</span>
+                        <span className="muted">{dashboardMixMode === 'TYPE' ? 'Personal vs shared' : 'Category wise'}</span>
                       </div>
                       <div className="dashboard-mix-layout">
                         <div
                           className="dashboard-donut"
                           style={{
-                            background: `conic-gradient(#6c5ce7 0 ${expenseMix.personalPct}%, #8be0cb ${expenseMix.personalPct}% 100%)`,
+                            background: dashboardMixMode === 'TYPE'
+                              ? `conic-gradient(#6c5ce7 0 ${expenseMix.personalPct}%, #8be0cb ${expenseMix.personalPct}% 100%)`
+                              : `conic-gradient(${dashboardCategoryMix.gradient})`,
                           }}
                         >
                           <div className="dashboard-donut-hole">
-                            <strong>{expenseMix.total > 0 ? `${Math.round(expenseMix.personalPct)}%` : '0%'}</strong>
-                            <span>Personal</span>
+                            {dashboardMixMode === 'TYPE' ? (
+                              <>
+                                <strong>{expenseMix.total > 0 ? `${Math.round(expenseMix.personalPct)}%` : '0%'}</strong>
+                                <span>Personal</span>
+                              </>
+                            ) : (
+                              <>
+                                <strong>{dashboardCategoryMix.total > 0 ? `${Math.round(dashboardCategoryMix.topPct)}%` : '0%'}</strong>
+                                <span>{dashboardCategoryMix.topCategory?.label || 'No spend'}</span>
+                              </>
+                            )}
                           </div>
                         </div>
                         <div className="dashboard-legend">
-                          <div className="dashboard-legend-row">
-                            <span className="dashboard-legend-dot personal-dot" />
-                            <span>Personal</span>
-                            <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(expenseMix.personal, defaultCurrency).toFixed(2)}</strong>
-                          </div>
-                          <div className="dashboard-legend-row">
-                            <span className="dashboard-legend-dot group-dot" />
-                            <span>Group share</span>
-                            <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(expenseMix.group, defaultCurrency).toFixed(2)}</strong>
-                          </div>
+                          {dashboardMixMode === 'TYPE' ? (
+                            <>
+                              <div className="dashboard-legend-row">
+                                <span className="dashboard-legend-dot personal-dot" />
+                                <span>Personal</span>
+                                <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(expenseMix.personal, defaultCurrency).toFixed(2)}</strong>
+                              </div>
+                              <div className="dashboard-legend-row">
+                                <span className="dashboard-legend-dot group-dot" />
+                                <span>Group share</span>
+                                <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(expenseMix.group, defaultCurrency).toFixed(2)}</strong>
+                              </div>
+                            </>
+                          ) : dashboardCategoryMix.totals.length > 0 ? (
+                            dashboardCategoryMix.totals.map((entry, index) => (
+                              <div key={entry.label} className="dashboard-legend-row">
+                                <span className="dashboard-legend-dot" style={{ background: getCategoryColor(index) }} />
+                                <span>{entry.label}</span>
+                                <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(entry.total, defaultCurrency).toFixed(2)}</strong>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="muted">No spending in this period</div>
+                          )}
                         </div>
                       </div>
                     </article>
@@ -3852,7 +3929,7 @@ async function handleSettleUp(expenseId: string) {
                       </p>
                     </section>
 
-                    <section className="panel account-budget-panel">
+                    <section className="panel workspace-panel workspace-panel-wide account-budget-panel">
                       <div className="account-panel-head">
                         <h3>{selectedBudgetMeta.titleLabel} budget</h3>
                         <span className="muted">{selectedBudgetMeta.label}</span>
@@ -3917,7 +3994,7 @@ async function handleSettleUp(expenseId: string) {
                       </div>
                     </section>
 
-                    <section className="panel account-preferences-panel">
+                    <section className="panel workspace-panel workspace-panel-wide account-preferences-panel">
                       <div className="account-panel-head">
                         <h3>Preferences</h3>
                       </div>
