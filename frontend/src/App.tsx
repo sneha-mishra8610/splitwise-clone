@@ -523,6 +523,13 @@ useEffect(() => {
   const [defaultSplitMethod, setDefaultSplitMethod] = useState<'equal' | 'unequal' | 'percentage'>('equal')
   const [accountThemePreference, setAccountThemePreference] = useState<'light' | 'dark' | 'system'>('system')
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmNewPassword, setConfirmNewPassword] = useState('')
+  const [passwordChangeError, setPasswordChangeError] = useState('')
+  const [passwordChangeSuccess, setPasswordChangeSuccess] = useState('')
+  const [passwordChangeLoading, setPasswordChangeLoading] = useState(false)
 
   const [editingFriend, setEditingFriend] = useState<User | null>(null)
   const [editFriendName, setEditFriendName] = useState('')
@@ -1202,6 +1209,45 @@ const handleUnflagExpense = React.useCallback(async (expenseId: string) => {
     await fetchAllGroupExpenses()
   }
 
+    // --- Export/Download Handlers ---
+  async function handleExport(format: 'pdf' | 'word' | 'excel') {
+    if (!currentUserId) return;
+    let endpoint = '';
+    let filename = '';
+    let mime = '';
+    if (format === 'pdf') {
+      endpoint = `${API_BASE}/export/pdf/${currentUserId}`;
+      filename = 'finwise-data.pdf';
+      mime = 'application/pdf';
+    } else if (format === 'word') {
+      endpoint = `${API_BASE}/export/word/${currentUserId}`;
+      filename = 'finwise-data.docx';
+      mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    } else if (format === 'excel') {
+      endpoint = `${API_BASE}/export/excel/${currentUserId}`;
+      filename = 'finwise-data.xlsx';
+      mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    }
+    try {
+      // Use fetch directly to avoid setting Content-Type
+      const headers = new Headers();
+      if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
+      const res = await fetch(endpoint, { method: 'GET', headers });
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(new Blob([blob], { type: mime }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      alert('Failed to export data. Please try again.');
+    }
+  }
+
   function equalShare(expense: Expense): number {
     const participants = expense.participantIds?.length || 1
     return Math.round((expense.amount / participants) * 100) / 100
@@ -1292,6 +1338,71 @@ async function handleSettleUp(expenseId: string) {
       .slice(0, 2)
       .map((part) => part[0]?.toUpperCase() || '')
       .join('') || '?'
+  }
+
+  function resetPasswordForm() {
+    setCurrentPassword('')
+    setNewPassword('')
+    setConfirmNewPassword('')
+    setPasswordChangeError('')
+    setPasswordChangeSuccess('')
+    setPasswordChangeLoading(false)
+  }
+
+  function openPasswordModal() {
+    resetPasswordForm()
+    setShowPasswordModal(true)
+  }
+
+  function closePasswordModal() {
+    setShowPasswordModal(false)
+    resetPasswordForm()
+  }
+
+  async function handleChangePassword(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setPasswordChangeError('')
+    setPasswordChangeSuccess('')
+
+    if (!currentUser?.email) {
+      setPasswordChangeError('Please log in again before changing your password.')
+      return
+    }
+
+    if (newPassword.length < 6) {
+      setPasswordChangeError('New password must be at least 6 characters long.')
+      return
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setPasswordChangeError('New password and confirmation do not match.')
+      return
+    }
+
+    setPasswordChangeLoading(true)
+    try {
+      const res = await authedFetch(`${API_BASE}/auth/reset-password`, {
+        method: 'POST',
+        body: JSON.stringify({
+          email: currentUser.email,
+          oldPassword: currentPassword,
+          newPassword,
+        }),
+      })
+      const message = await res.text()
+      if (!res.ok) {
+        setPasswordChangeError(message || 'Unable to change password.')
+        return
+      }
+      setPasswordChangeSuccess(message || 'Password reset successful')
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmNewPassword('')
+    } catch {
+      setPasswordChangeError('Unable to reach the password reset service.')
+    } finally {
+      setPasswordChangeLoading(false)
+    }
   }
 
   function inferExpenseCategory(description: string): string {
@@ -3895,7 +4006,7 @@ async function handleSettleUp(expenseId: string) {
                         <p>{currentUser?.email || 'rahul@gmail.com'} · Member since {memberSince}</p>
                         <div className="account-inline-actions">
                           <button type="button" className="icon-btn">Edit profile</button>
-                          <button type="button" className="ghost-btn">Change password</button>
+                          <button type="button" className="ghost-btn" onClick={openPasswordModal}>Change password</button>
                         </div>
                       </div>
                     </div>
@@ -4103,7 +4214,7 @@ async function handleSettleUp(expenseId: string) {
                           </label>
                         </div>
                         <div className="account-inline-actions">
-                          <button type="button" className="icon-btn">Change password</button>
+                          <button type="button" className="icon-btn" onClick={openPasswordModal}>Change password</button>
                         </div>
                       </div>
                     </section>
@@ -4130,9 +4241,9 @@ async function handleSettleUp(expenseId: string) {
                         <h3>Data & Export</h3>
                       </div>
                       <div className="account-inline-actions">
-                        <button type="button" className="icon-btn">Export JSON</button>
-                        <button type="button" className="ghost-btn">Export CSV</button>
-                        <button type="button" className="ghost-btn">Download all data</button>
+                        <button type="button" className="icon-btn" onClick={() => handleExport('pdf')}>Export PDF</button>
+                        <button type="button" className="ghost-btn" onClick={() => handleExport('word')}>Export Word</button>
+                        <button type="button" className="ghost-btn" onClick={() => handleExport('excel')}>Export Excel</button>
                       </div>
                     </section>
 
@@ -4152,6 +4263,55 @@ async function handleSettleUp(expenseId: string) {
           })()}
         </main>
       </div>
+
+      {showPasswordModal && (
+        <div className="modal-overlay" onClick={closePasswordModal}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Change password</h2>
+              <button className="modal-close" onClick={closePasswordModal}>âœ•</button>
+            </div>
+            <form className="form-vertical" onSubmit={handleChangePassword}>
+              <label className="field-label">Current password</label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                autoComplete="current-password"
+                required
+              />
+              <label className="field-label">New password</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                autoComplete="new-password"
+                minLength={6}
+                required
+              />
+              <label className="field-label">Confirm new password</label>
+              <input
+                type="password"
+                value={confirmNewPassword}
+                onChange={(event) => setConfirmNewPassword(event.target.value)}
+                autoComplete="new-password"
+                minLength={6}
+                required
+              />
+              {passwordChangeError && <p className="error-text">{passwordChangeError}</p>}
+              {passwordChangeSuccess && <p className="success-text">{passwordChangeSuccess}</p>}
+              <div className="account-inline-actions">
+                <button type="submit" disabled={passwordChangeLoading}>
+                  {passwordChangeLoading ? 'Updating...' : 'Update password'}
+                </button>
+                <button type="button" className="ghost-btn" onClick={closePasswordModal}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {(showQuickGroupChat && (groupDetailView || expenseDetailView)) && (
         <div className="modal-overlay" onClick={() => setShowQuickGroupChat(false)}>

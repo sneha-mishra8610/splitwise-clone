@@ -137,5 +137,36 @@ public class AuthController {
             return token;
         }
     }
+
+        @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
+        Optional<User> userOpt = userRepository.findByEmail(request.getEmail());
+        if (userOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found");
+        }
+        User user = userOpt.get();
+        if(!passwordEncoder.matches(request.getOldPassword(),user.getPasswordHash())){
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Current password entered is incorrect");
+        }
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+        return ResponseEntity.ok("Password reset successful");
+    }
+
+    public static class ResetPasswordRequest {
+        @NotBlank
+        @Email
+        private String email;
+        @NotBlank
+        private String newPassword;
+        @NotBlank
+        private String oldPassword;
+
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
+        public String getOldPassword(){ return oldPassword; }
+        public String getNewPassword() { return newPassword; }
+        public void setNewPassword(String newPassword) { this.newPassword = newPassword; }
+    }
 }
 
