@@ -251,6 +251,8 @@ function App() {
   const [notificationError, setNotificationError] = useState('');
   const [expensesPage, setExpensesPage] = useState(1);
   const EXPENSES_PAGE_SIZE = 10;
+  const WORKSPACE_EXPENSES_PAGE_SIZE = 10;
+  const [workspaceExpensesPage, setWorkspaceExpensesPage] = useState(1)
 
   const currentUser: User | null = users.find((u) => u.id === currentUserId) || null;
   const currentUserName = currentUser?.name || 'You';
@@ -439,6 +441,10 @@ function App() {
     setWorkspaceExpenseStatusFilter('ALL')
     setWorkspaceExpenseDateFilter('ALL')
   }, [groupDetailView, friendDetailView]);
+
+  useEffect(() => {
+    setWorkspaceExpensesPage(1)
+  }, [groupDetailView, friendDetailView])
   
   useEffect(() => {
   setExpensesPage(1);
@@ -1591,6 +1597,7 @@ async function handleSettleUp(expenseId: string) {
       : 'Nothing pending in this group'
 
     const topSettlement = participantBalances[0] || null
+    const visibleExpenses = filteredExpenses.slice(0, workspaceExpensesPage * WORKSPACE_EXPENSES_PAGE_SIZE)
 
     return (
       <section className="workspace-shell">
@@ -1836,7 +1843,7 @@ async function handleSettleUp(expenseId: string) {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredExpenses.map((expense, index) => {
+                  {visibleExpenses.map((expense, index) => {
                     const isSelected = selectedWorkspaceExpense?.id === expense.id
                     const youOwe = expense.payerId !== currentUserId
                       && (expense.participantIds || []).includes(currentUserId)
@@ -1887,6 +1894,16 @@ async function handleSettleUp(expenseId: string) {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+          {filteredExpenses.length > workspaceExpensesPage * WORKSPACE_EXPENSES_PAGE_SIZE && (
+            <div style={{ textAlign: 'left', marginTop: '1rem' }}>
+              <button
+                type="button"
+                onClick={() => setWorkspaceExpensesPage((page) => page + 1)}
+              >
+                Load more
+              </button>
             </div>
           )}
         </section>
@@ -3644,7 +3661,7 @@ async function handleSettleUp(expenseId: string) {
                     </div>
                   </section>
                   {filteredExpenseFeed.length > expensesPage * EXPENSES_PAGE_SIZE && (
-                 <div style={{ textAlign: 'center', margin: '1rem 0' }}>
+                 <div style={{ textAlign: 'left', margin: '1rem 0' }}>
                  <button onClick={() => setExpensesPage(expensesPage + 1)}>Load more</button>
                  </div>
                   )}
