@@ -249,7 +249,8 @@ function App() {
   const [pendingExpenses, setPendingExpenses] = useState<Expense[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [notificationError, setNotificationError] = useState('');
-  
+  const [expensesPage, setExpensesPage] = useState(1);
+  const EXPENSES_PAGE_SIZE = 10;
 
   const currentUser: User | null = users.find((u) => u.id === currentUserId) || null;
   const currentUserName = currentUser?.name || 'You';
@@ -439,6 +440,10 @@ function App() {
     setWorkspaceExpenseDateFilter('ALL')
   }, [groupDetailView, friendDetailView]);
   
+  useEffect(() => {
+  setExpensesPage(1);
+}, [expenseViewFilter]);
+
   useEffect(() => {
     if (!groupDetailView) return;
     let stopped = false;
@@ -3555,7 +3560,7 @@ async function handleSettleUp(expenseId: string) {
                           <span>Try another filter or add a new expense.</span>
                         </div>
                       ) : (
-                        filteredExpenseFeed.map((expense) => {
+                        filteredExpenseFeed.slice(0, expensesPage * EXPENSES_PAGE_SIZE).map((expense) => {
                           const isGroupExpense = expense.type === 'GROUP'
                           const participants = expense.participantIds || []
                           const friendCounterpartyId = isGroupExpense && participants.length === 2 && participants.includes(currentUserId)
@@ -3614,7 +3619,7 @@ async function handleSettleUp(expenseId: string) {
                                   </div>
                                 </div>
                               </div>
-
+                              
                               <div className="expense-stream-side">
                                 <strong>{getCurrencySymbol(defaultCurrency)}{convertINR(isGroupExpense ? userShare(expense) : expense.amount, defaultCurrency).toFixed(2)}</strong>
                                 <span className="muted">
@@ -3638,6 +3643,11 @@ async function handleSettleUp(expenseId: string) {
                       )}
                     </div>
                   </section>
+                  {filteredExpenseFeed.length > expensesPage * EXPENSES_PAGE_SIZE && (
+                 <div style={{ textAlign: 'center', margin: '1rem 0' }}>
+                 <button onClick={() => setExpensesPage(expensesPage + 1)}>Load more</button>
+                 </div>
+                  )}
                 </div>
 
                 <aside className="panel expenses-detail-panel">
