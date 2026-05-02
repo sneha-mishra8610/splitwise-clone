@@ -8,6 +8,7 @@ type User = {
   name: string
   email: string
   friendIds: string[]
+  budgetPreferences?: Record<string, number>
   emailNotificationsEnabled: boolean
 }
 
@@ -566,26 +567,67 @@ useEffect(() => {
 
   const [friendBalances, setFriendBalances] = useState<{ [friendId: string]: number }>({});
   const dashboardPeriodMeta = getBudgetPeriodMeta(dashboardPeriod, new Date())
-  const dashboardBudgetStorageKey = `budget:${dashboardPeriod}:${currentUserId || 'guest'}:${dashboardPeriodMeta.storageToken}`
+  const dashboardBudgetStorageKey = `budget:${dashboardPeriod}:${dashboardPeriodMeta.storageToken}`
   const budgetPeriodMeta = getBudgetPeriodMeta(selectedBudgetPeriod, new Date())
-  const budgetStorageKey = `budget:${selectedBudgetPeriod}:${currentUserId || 'guest'}:${budgetPeriodMeta.storageToken}`
+  const budgetStorageKey = `budget:${selectedBudgetPeriod}:${budgetPeriodMeta.storageToken}`
 
   useEffect(() => {
     localStorage.setItem('theme', theme)
   }, [theme])
 
   useEffect(() => {
-    const storedBudget = localStorage.getItem(dashboardBudgetStorageKey)
-    const parsedBudget = storedBudget ? Number(storedBudget) : 0
-    setDashboardBudgetAmount(Number.isFinite(parsedBudget) ? parsedBudget : 0)
-  }, [dashboardBudgetStorageKey])
+    const savedBudget = currentUser?.budgetPreferences?.[dashboardBudgetStorageKey] ?? 0
+    setDashboardBudgetAmount(Number.isFinite(savedBudget) ? savedBudget : 0)
+  }, [dashboardBudgetStorageKey, currentUser])
 
   useEffect(() => {
-    const storedBudget = localStorage.getItem(budgetStorageKey)
-    const parsedBudget = storedBudget ? Number(storedBudget) : 0
+    const savedBudget = currentUser?.budgetPreferences?.[budgetStorageKey] ?? 0
+    const parsedBudget = Number(savedBudget)
     setBudgetAmount(Number.isFinite(parsedBudget) ? parsedBudget : 0)
-    setBudgetInput(storedBudget && Number.isFinite(parsedBudget) ? String(parsedBudget) : '')
-  }, [budgetStorageKey])
+    setBudgetInput(Number.isFinite(parsedBudget) && parsedBudget > 0 ? String(parsedBudget) : '')
+  }, [budgetStorageKey, currentUser])
+
+  useEffect(() => {
+    if (!currentUser) return
+
+    const nextBudgetPreferences = { ...(currentUser.budgetPreferences || {}) }
+    let hasChanges = false
+
+    const legacyDashboardBudgetStorageKey = `budget:${dashboardPeriod}:${currentUser.id}:${dashboardPeriodMeta.storageToken}`
+    if (nextBudgetPreferences[dashboardBudgetStorageKey] == null) {
+      const legacyDashboardBudget = localStorage.getItem(legacyDashboardBudgetStorageKey)
+      const parsedLegacyDashboardBudget = legacyDashboardBudget ? Number(legacyDashboardBudget) : 0
+      if (Number.isFinite(parsedLegacyDashboardBudget) && parsedLegacyDashboardBudget > 0) {
+        nextBudgetPreferences[dashboardBudgetStorageKey] = parsedLegacyDashboardBudget
+        hasChanges = true
+      }
+    }
+
+    const legacyBudgetStorageKey = `budget:${selectedBudgetPeriod}:${currentUser.id}:${budgetPeriodMeta.storageToken}`
+    if (nextBudgetPreferences[budgetStorageKey] == null) {
+      const legacyBudget = localStorage.getItem(legacyBudgetStorageKey)
+      const parsedLegacyBudget = legacyBudget ? Number(legacyBudget) : 0
+      if (Number.isFinite(parsedLegacyBudget) && parsedLegacyBudget > 0) {
+        nextBudgetPreferences[budgetStorageKey] = parsedLegacyBudget
+        hasChanges = true
+      }
+    }
+
+    if (!hasChanges) return
+
+    void authedFetch(`${API_BASE}/users/${currentUser.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...currentUser,
+        budgetPreferences: nextBudgetPreferences,
+      }),
+    }).then((res) => {
+      if (!res.ok) return
+      return res.json().then((updatedUser: User) => {
+        setUsers((prev) => prev.map((user) => (user.id === updatedUser.id ? updatedUser : user)))
+      })
+    })
+  }, [authedFetch, budgetPeriodMeta.storageToken, budgetStorageKey, currentUser, currentUserId, dashboardBudgetStorageKey, dashboardPeriod, dashboardPeriodMeta.storageToken, selectedBudgetPeriod])
 
   useEffect(() => {
     if (!showQuickGroupChat || quickChatGroupId) return
@@ -608,13 +650,28 @@ useEffect(() => {
     setShowQuickGroupChat(true)
   }
 
-  function handleSaveBudget(event: React.FormEvent) {
+  async function handleSaveBudget(event: React.FormEvent) {
     event.preventDefault()
     const parsed = Number(budgetInput)
     const sanitized = Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) / 100 : 0
-    localStorage.setItem(budgetStorageKey, String(sanitized))
-    setBudgetAmount(sanitized)
-    setBudgetInput(sanitized > 0 ? String(sanitized) : '')
+    if (!currentUser) return
+    const nextBudgetPreferences = {
+      ...(currentUser.budgetPreferences || {}),
+      [budgetStorageKey]: sanitized,
+    }
+    const res = await authedFetch(`${API_BASE}/users/${currentUser.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...currentUser,
+        budgetPreferences: nextBudgetPreferences,
+      }),
+    })
+    if (res.ok) {
+      const updatedUser: User = await res.json()
+      setUsers((prev) => prev.map((user) => (user.id === updatedUser.id ? updatedUser : user)))
+      setBudgetAmount(sanitized)
+      setBudgetInput(sanitized > 0 ? String(sanitized) : '')
+    }
   }
 
   const fetchUsers = React.useCallback(async () => {

@@ -3,7 +3,9 @@ package com.example.splitwise.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -19,6 +21,8 @@ public class User {
     private String passwordHash;
 
     private Set<String> friendIds = new HashSet<>();
+
+    private Map<String, Double> budgetPreferences = new HashMap<>();
 
     private boolean emailNotificationsEnabled = true;
 
@@ -62,6 +66,14 @@ public class User {
         this.friendIds = friendIds;
     }
 
+    public Map<String, Double> getBudgetPreferences() {
+        return budgetPreferences;
+    }
+
+    public void setBudgetPreferences(Map<String, Double> budgetPreferences) {
+        this.budgetPreferences = budgetPreferences;
+    }
+
     public boolean isEmailNotificationsEnabled() {
         return emailNotificationsEnabled;
     }
@@ -80,12 +92,13 @@ public class User {
                 Objects.equals(name, user.name) &&
                 Objects.equals(email, user.email) &&
                 Objects.equals(passwordHash, user.passwordHash) &&
-                Objects.equals(friendIds, user.friendIds);
+                Objects.equals(friendIds, user.friendIds) &&
+                Objects.equals(budgetPreferences, user.budgetPreferences);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, name, email, passwordHash, friendIds, emailNotificationsEnabled);
+        return Objects.hash(id, name, email, passwordHash, friendIds, budgetPreferences, emailNotificationsEnabled);
     }
 
     @Override
@@ -95,6 +108,7 @@ public class User {
                 ", name='" + name + '\'' +
                 ", email='" + email + '\'' +
                 ", friendIds=" + friendIds +
+                ", budgetPreferences=" + budgetPreferences +
                 ", emailNotificationsEnabled=" + emailNotificationsEnabled +
                 '}';
     }

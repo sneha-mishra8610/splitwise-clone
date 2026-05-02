@@ -12,6 +12,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -21,6 +23,7 @@ public class AuthController {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final UserService userService;
+    private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
 
     public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService, UserService userService) {
         this.userRepository = userRepository;
@@ -31,21 +34,31 @@ public class AuthController {
 
     @PostMapping("/signup")
     public ResponseEntity<AuthResponse> signup(@RequestBody SignupRequest request) {
-        Optional<User> existing = userRepository.findByEmail(request.getEmail());
-        if (existing.isPresent()) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        try {
+            logger.info("Signup request for email: {}", request.getEmail());
+            Optional<User> existing = userRepository.findByEmail(request.getEmail());
+            if (existing.isPresent()) {
+                logger.warn("User already exists: {}", request.getEmail());
+                return ResponseEntity.status(HttpStatus.CONFLICT).build();
+            }
+
+            User user = new User();
+            user.setName(request.getName());
+            user.setEmail(request.getEmail());
+            String encoded = passwordEncoder.encode(request.getPassword());
+            logger.info("Encoded password length: {}", encoded.length());
+            user.setPasswordHash(encoded);
+            user.setEmailNotificationsEnabled(true);
+
+            User saved = userRepository.save(user);
+            logger.info("User saved with id: {}, password stored: {}", saved.getId(), saved.getPasswordHash() != null);
+            userService.processInvitationsForNewUser(saved);
+            String token = jwtService.generateToken(saved);
+            return ResponseEntity.ok(new AuthResponse(saved, token));
+        } catch (Exception e) {
+            logger.error("Error in signup: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
-
-        User user = new User();
-        user.setName(request.getName());
-        user.setEmail(request.getEmail());
-        user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        user.setEmailNotificationsEnabled(true);
-
-        User saved = userRepository.save(user);
-        userService.processInvitationsForNewUser(saved);
-        String token = jwtService.generateToken(saved);
-        return ResponseEntity.ok(new AuthResponse(saved, token));
     }
 
     @PostMapping("/login")
@@ -140,17 +153,40 @@ public class AuthController {
 
         @PostMapping("/reset-password")
     public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
-        Optional<User> userOpt = userRepository.findByEmail(request.getEmail());
-        if (userOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found");
+        try {
+            logger.info("Reset password request for email: {}", request.getEmail());
+            Optional<User> userOpt = userRepository.findByEmail(request.getEmail());
+            if (userOpt.isEmpty()) {
+                logger.warn("User not found for email: {}", request.getEmail());
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found");
+            }
+            User user = userOpt.get();
+            
+            logger.info("User found. Password hash exists: {}, Hash length: {}", 
+                user.getPasswordHash() != null, 
+                user.getPasswordHash() != null ? user.getPasswordHash().length() : "N/A");
+            
+            if (user.getPasswordHash() == null || user.getPasswordHash().isEmpty()) {
+                logger.error("No password set for user: {}", request.getEmail());
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("No password set for this user - contact support");
+            }
+            
+            boolean passwordMatches = passwordEncoder.matches(request.getOldPassword(), user.getPasswordHash());
+            logger.info("Password match result: {}", passwordMatches);
+            
+            if (!passwordMatches) {
+                logger.warn("Incorrect old password for user: {}", request.getEmail());
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Current password entered is incorrect");
+            }
+            
+            user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+            userRepository.save(user);
+            logger.info("Password reset successful for user: {}", request.getEmail());
+            return ResponseEntity.ok("Password reset successful");
+        } catch (Exception e) {
+            logger.error("Error in reset password: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Internal server error: " + e.getMessage());
         }
-        User user = userOpt.get();
-        if(!passwordEncoder.matches(request.getOldPassword(),user.getPasswordHash())){
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Current password entered is incorrect");
-        }
-        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
-        userRepository.save(user);
-        return ResponseEntity.ok("Password reset successful");
     }
 
     public static class ResetPasswordRequest {
