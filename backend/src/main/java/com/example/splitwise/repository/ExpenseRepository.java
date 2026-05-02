@@ -26,5 +26,8 @@ public interface ExpenseRepository extends MongoRepository<Expense, String> {
     List<Expense> findByIsRecurringTrueAndGeneratedFromRecurringIdIsNull();
 
     boolean existsByGeneratedFromRecurringIdAndRecurrenceOccurrenceDate(String generatedFromRecurringId, Instant recurrenceOccurrenceDate);
+
+    @Query("{ 'payerId': ?0, 'createdAt': { $gte: ?1, $lt: ?2 } }")
+    List<Expense> findByPayerIdAndCreatedAtBetween(String payerId, Instant start, Instant end);
 }
 

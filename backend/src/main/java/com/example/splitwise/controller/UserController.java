@@ -19,10 +19,12 @@ public class UserController {
 
     private final UserRepository userRepository;
     private final UserService userService;
+    private final com.example.splitwise.service.BudgetService budgetService;
 
-    public UserController(UserRepository userRepository, UserService userService) {
+    public UserController(UserRepository userRepository, UserService userService, com.example.splitwise.service.BudgetService budgetService) {
         this.userRepository = userRepository;
         this.userService = userService;
+        this.budgetService = budgetService;
     }
 
     @PostMapping
@@ -39,6 +41,21 @@ public class UserController {
     @GetMapping
     public List<User> listUsers() {
         return userRepository.findAll();
+    }
+
+    @GetMapping("/{userId}/budgets")
+    public ResponseEntity<?> getUserBudgets(@PathVariable("userId") String userId) {
+        return ResponseEntity.ok(budgetService.getUserBudgets(userId));
+    }
+
+    @PostMapping("/{userId}/budgets")
+    public ResponseEntity<User> setUserBudget(@PathVariable("userId") String userId, @RequestBody Map<String, Object> body) {
+        String period = (String) body.get("period");
+        String storageToken = (String) body.get("storageToken");
+        Double amount = body.get("amount") instanceof Number ? ((Number) body.get("amount")).doubleValue() : null;
+        if (period == null || storageToken == null || amount == null) return ResponseEntity.badRequest().build();
+        User updated = budgetService.setUserBudget(userId, period, storageToken, amount);
+        return ResponseEntity.ok(updated);
     }
 
     @PostMapping("/{userId}/friends/{friendId}")

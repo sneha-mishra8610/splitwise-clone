@@ -84,6 +84,17 @@ type DashboardSummary = {
 
 type BudgetPeriod = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
 
+type BudgetSummary = {
+  period: BudgetPeriod
+  storageToken: string
+  amount: number
+  spent: number
+  remaining: number
+  rangeStart?: string
+  rangeEnd?: string
+  label?: string
+}
+
 function getBudgetPeriodMeta(period: BudgetPeriod, now: Date) {
   const year = now.getFullYear()
   const month = now.getMonth()
@@ -152,6 +163,30 @@ function getBudgetPeriodMeta(period: BudgetPeriod, now: Date) {
     label: String(year),
     titleLabel: 'Yearly',
     placeholder: 'Set yearly budget',
+  }
+}
+
+function getPreviousPeriodDate(period: BudgetPeriod, now: Date) {
+  const prev = new Date(now.getTime())
+  switch (period) {
+    case 'DAILY':
+      prev.setDate(prev.getDate() - 1)
+      return prev
+    case 'WEEKLY':
+      prev.setDate(prev.getDate() - 7)
+      return prev
+    case 'MONTHLY':
+      prev.setMonth(prev.getMonth() - 1)
+      return prev
+    case 'QUARTERLY':
+      prev.setMonth(prev.getMonth() - 3)
+      return prev
+    case 'YEARLY':
+      prev.setFullYear(prev.getFullYear() - 1)
+      return prev
+    default:
+      prev.setMonth(prev.getMonth() - 1)
+      return prev
   }
 }
 
@@ -506,6 +541,17 @@ function App() {
   const [selectedBudgetPeriod, setSelectedBudgetPeriod] = useState<BudgetPeriod>('MONTHLY')
   const [budgetInput, setBudgetInput] = useState('')
   const [budgetAmount, setBudgetAmount] = useState<number>(0)
+  const [budgetSummaries, setBudgetSummaries] = useState<BudgetSummary[]>([])
+
+  const fetchUserBudgets = React.useCallback(async (userId?: string) => {
+    if (!userId) return
+    try {
+      const res = await authedFetch(`${API_BASE}/users/${userId}/budgets`)
+      if (!res.ok) return
+      const data = await res.json()
+      setBudgetSummaries(Array.isArray(data) ? data : [])
+    } catch (e) { }
+  }, [authedFetch])
   const [defaultCurrency, setDefaultCurrency] = useState(() => {
   return localStorage.getItem('defaultCurrency') || 'INR';
 });
@@ -576,16 +622,20 @@ useEffect(() => {
   }, [theme])
 
   useEffect(() => {
-    const savedBudget = currentUser?.budgetPreferences?.[dashboardBudgetStorageKey] ?? 0
-    setDashboardBudgetAmount(Number.isFinite(savedBudget) ? savedBudget : 0)
-  }, [dashboardBudgetStorageKey, currentUser])
+    const storageToken = dashboardBudgetStorageKey.split(':').pop() || ''
+    const summary = budgetSummaries.find((s) => s.period === dashboardPeriod && s.storageToken === storageToken)
+    const amt = summary ? summary.amount : (currentUser?.budgetPreferences?.[dashboardBudgetStorageKey] ?? 0)
+    setDashboardBudgetAmount(Number.isFinite(amt) ? amt : 0)
+  }, [dashboardBudgetStorageKey, currentUser, budgetSummaries, dashboardPeriod])
 
   useEffect(() => {
-    const savedBudget = currentUser?.budgetPreferences?.[budgetStorageKey] ?? 0
-    const parsedBudget = Number(savedBudget)
+    const storageToken = budgetPeriodMeta.storageToken
+    const summary = budgetSummaries.find((s) => s.period === selectedBudgetPeriod && s.storageToken === storageToken)
+    const amt = summary ? summary.amount : (currentUser?.budgetPreferences?.[budgetStorageKey] ?? 0)
+    const parsedBudget = Number(amt)
     setBudgetAmount(Number.isFinite(parsedBudget) ? parsedBudget : 0)
     setBudgetInput(Number.isFinite(parsedBudget) && parsedBudget > 0 ? String(parsedBudget) : '')
-  }, [budgetStorageKey, currentUser])
+  }, [budgetStorageKey, currentUser, budgetSummaries, selectedBudgetPeriod, budgetPeriodMeta.storageToken])
 
   useEffect(() => {
     if (!currentUser) return
@@ -601,6 +651,17 @@ useEffect(() => {
         nextBudgetPreferences[dashboardBudgetStorageKey] = parsedLegacyDashboardBudget
         hasChanges = true
       }
+      // If still missing, try previous period's budget
+      if (nextBudgetPreferences[dashboardBudgetStorageKey] == null) {
+        const prevDate = getPreviousPeriodDate(dashboardPeriod, new Date())
+        const prevMeta = getBudgetPeriodMeta(dashboardPeriod, prevDate)
+        const prevKey = `budget:${dashboardPeriod}:${prevMeta.storageToken}`
+        const prevVal = nextBudgetPreferences[prevKey]
+        if (Number.isFinite(prevVal) && prevVal > 0) {
+          nextBudgetPreferences[dashboardBudgetStorageKey] = prevVal
+          hasChanges = true
+        }
+      }
     }
 
     const legacyBudgetStorageKey = `budget:${selectedBudgetPeriod}:${currentUser.id}:${budgetPeriodMeta.storageToken}`
@@ -610,6 +671,17 @@ useEffect(() => {
       if (Number.isFinite(parsedLegacyBudget) && parsedLegacyBudget > 0) {
         nextBudgetPreferences[budgetStorageKey] = parsedLegacyBudget
         hasChanges = true
+      }
+      // If still missing, try previous period's budget
+      if (nextBudgetPreferences[budgetStorageKey] == null) {
+        const prevDate = getPreviousPeriodDate(selectedBudgetPeriod, new Date())
+        const prevMeta = getBudgetPeriodMeta(selectedBudgetPeriod, prevDate)
+        const prevKey = `budget:${selectedBudgetPeriod}:${prevMeta.storageToken}`
+        const prevVal = nextBudgetPreferences[prevKey]
+        if (Number.isFinite(prevVal) && prevVal > 0) {
+          nextBudgetPreferences[budgetStorageKey] = prevVal
+          hasChanges = true
+        }
       }
     }
 
@@ -655,22 +727,23 @@ useEffect(() => {
     const parsed = Number(budgetInput)
     const sanitized = Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) / 100 : 0
     if (!currentUser) return
-    const nextBudgetPreferences = {
-      ...(currentUser.budgetPreferences || {}),
-      [budgetStorageKey]: sanitized,
+    const body = {
+      period: selectedBudgetPeriod,
+      storageToken: budgetPeriodMeta.storageToken,
+      amount: sanitized,
     }
-    const res = await authedFetch(`${API_BASE}/users/${currentUser.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        ...currentUser,
-        budgetPreferences: nextBudgetPreferences,
-      }),
+    const res = await authedFetch(`${API_BASE}/users/${currentUser.id}/budgets`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     })
     if (res.ok) {
-      const updatedUser: User = await res.json()
-      setUsers((prev) => prev.map((user) => (user.id === updatedUser.id ? updatedUser : user)))
+      try {
+        const updatedUser: User = await res.json()
+        setUsers((prev) => prev.map((user) => (user.id === updatedUser.id ? updatedUser : user)))
+      } catch (e) { }
       setBudgetAmount(sanitized)
       setBudgetInput(sanitized > 0 ? String(sanitized) : '')
+      void fetchUserBudgets(currentUser.id)
     }
   }
 
@@ -1394,10 +1467,6 @@ async function handleSettleUp(expenseId: string) {
   await fetchDashboardSummary();
   await fetchFriendBalances();
 }
-
-  function formatMoney(amount: number, currency: string = 'INR'): string {
-    return `${getCurrencySymbol(currency)}${amount.toFixed(2)}`
-  }
 
   function getInitials(name: string): string {
     return name
@@ -4036,13 +4105,6 @@ async function handleSettleUp(expenseId: string) {
             const budgetRemaining = budgetAmount - spentForSelectedPeriod
             const budgetProgress = budgetAmount > 0 ? Math.min((spentForSelectedPeriod / budgetAmount) * 100, 100) : 0
 
-            const accountCurrency = allExpenses.find((expense) => expense.currency)?.currency || 'INR'
-            const formatAccountMoney = (amount: number) =>
-              `${getCurrencySymbol(accountCurrency)}${new Intl.NumberFormat('en-IN', {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-              }).format(Math.round(amount))}`
-
             const totalPaid = allExpenses
               .filter((expense) => expense.payerId === currentUserId)
               .reduce((sum, expense) => sum + expense.amount, 0)
@@ -4154,6 +4216,7 @@ async function handleSettleUp(expenseId: string) {
                           />
                           <button type="submit">Save</button>
                         </div>
+                        
                         <div className="account-budget-currency-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                           <span>Summary currency:</span>
                           <select value={budgetSummaryCurrency} onChange={e => setBudgetSummaryCurrency(e.target.value)}>
