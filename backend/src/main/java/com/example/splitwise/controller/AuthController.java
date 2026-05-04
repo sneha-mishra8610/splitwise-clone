@@ -189,6 +189,28 @@ public class AuthController {
         }
     }
 
+    @PostMapping("/force-reset-password")
+    public ResponseEntity<?> forceResetPassword(@RequestBody ForceResetPasswordRequest request) {
+        try {
+            logger.warn("Force reset password request for email: {}", request.getEmail());
+            Optional<User> userOpt = userRepository.findByEmail(request.getEmail());
+            if (userOpt.isEmpty()) {
+                logger.warn("User not found for force reset email: {}", request.getEmail());
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found");
+            }
+
+            User user = userOpt.get();
+            user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+            userRepository.save(user);
+
+            logger.warn("Force password reset successful for user: {}", request.getEmail());
+            return ResponseEntity.ok("Password force reset successful");
+        } catch (Exception e) {
+            logger.error("Error in force reset password: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Internal server error: " + e.getMessage());
+        }
+    }
+
     public static class ResetPasswordRequest {
         @NotBlank
         @Email
@@ -201,8 +223,34 @@ public class AuthController {
         public String getEmail() { return email; }
         public void setEmail(String email) { this.email = email; }
         public String getOldPassword(){ return oldPassword; }
+        public void setOldPassword(String oldPassword) { this.oldPassword = oldPassword; }
         public String getNewPassword() { return newPassword; }
         public void setNewPassword(String newPassword) { this.newPassword = newPassword; }
+    }
+
+    public static class ForceResetPasswordRequest {
+        @NotBlank
+        @Email
+        private String email;
+
+        @NotBlank
+        private String newPassword;
+
+        public String getEmail() {
+            return email;
+        }
+
+        public void setEmail(String email) {
+            this.email = email;
+        }
+
+        public String getNewPassword() {
+            return newPassword;
+        }
+
+        public void setNewPassword(String newPassword) {
+            this.newPassword = newPassword;
+        }
     }
 }
 

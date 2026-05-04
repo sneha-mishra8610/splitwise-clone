@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -40,6 +41,23 @@ public class UserService {
     }
 
     public User updateUser(User user) {
+        User existing = userRepository.findById(user.getId())
+                .orElseThrow(() -> new NoSuchElementException("User not found: " + user.getId()));
+
+        // Never allow generic profile updates to wipe credentials.
+        user.setPasswordHash(existing.getPasswordHash());
+
+        // Preserve critical fields when omitted in partial update payloads.
+        if (user.getEmail() == null || user.getEmail().isBlank()) {
+            user.setEmail(existing.getEmail());
+        }
+        if (user.getFriendIds() == null) {
+            user.setFriendIds(existing.getFriendIds());
+        }
+        if (user.getBudgetPreferences() == null) {
+            user.setBudgetPreferences(existing.getBudgetPreferences());
+        }
+
         return userRepository.save(user);
     }
 

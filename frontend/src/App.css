@@ -144,6 +144,16 @@
   transform: translateY(-1px);
 }
 
+.flag-btn {
+  background: #ff9800 !important;
+  color: #fff !important;
+  border: none !important;
+}
+
+.flag-btn:hover {
+  background: #f57c00 !important;
+}
+
 /* ── Tabs ── */
 .tabs {
   display: flex;
