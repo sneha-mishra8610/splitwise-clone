@@ -282,6 +282,12 @@ function App() {
   const [expenseChatInputs, setExpenseChatInputs] = useState<{ [expenseId: string]: string }>({});
 
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [editProfileName, setEditProfileName] = useState('');
+  const [editProfileError, setEditProfileError] = useState('');
+  const [editProfileSuccess, setEditProfileSuccess] = useState('');
+  const [editProfileLoading, setEditProfileLoading] = useState(false);
+  
   const [pendingExpenses, setPendingExpenses] = useState<Expense[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [notificationError, setNotificationError] = useState('');
@@ -360,6 +366,7 @@ function App() {
   const [activities, setActivities] = useState<Activity[]>([])
   const [activityPage, setActivityPage] = useState(0)
   const [activityHasMore, setActivityHasMore] = useState(true)
+  const [activityFilterLoading, setActivityFilterLoading] = useState(false)
 
   const [expenseDetailView, setExpenseDetailView] = useState<Expense | null>(null)
 
@@ -837,10 +844,10 @@ React.useEffect(() => {
     } catch { /* ignore */ }
   }, [authedFetch, currentUserId]);
 
-  async function fetchActivities(userId: string, page = 0, append = false) {
+  async function fetchActivities(userId: string, page = 0, append = false): Promise<Activity[] | undefined> {
     try {
-      const res = await authedFetch(`${API_BASE}/activities/${userId}?page=${page}&size=10`)
-      if (!res.ok) return
+      const res = await authedFetch(`${API_BASE}/activities/${userId}?page=${page}&size=20`)
+      if (!res.ok) return undefined
       const data = await res.json()
       if (Array.isArray(data)) {
         if (append) {
@@ -848,12 +855,15 @@ React.useEffect(() => {
         } else {
           setActivities(data)
         }
-        setActivityHasMore(data.length === 10)
+        setActivityHasMore(data.length === 20)
+        return data
       } else {
         if (!append) setActivities([])
         setActivityHasMore(false)
+        return []
       }
     } catch { /* ignore */ }
+    return undefined
   }
 
   async function fetchPendingInvitations() {
@@ -925,6 +935,37 @@ useEffect(() => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authToken, currentUserId])
+
+  useEffect(() => {
+    if (!authToken || !currentUserId) return
+    if (activityFilter === 'ALL') return
+
+    let cancelled = false
+    ;(async () => {
+      setActivityFilterLoading(true)
+      setActivityPage(0)
+      setActivities([])
+      const maxPages = 12
+      const minMatches = 3
+      let matchesFound = 0
+      let lastPageFetched = 0
+      for (let page = 0; page < maxPages && !cancelled; page++) {
+        const data = await fetchActivities(currentUserId, page, page !== 0)
+        lastPageFetched = page
+        if (!data) break
+        const matches = data.filter((a) => getActivityCategory(a) === activityFilter)
+        matchesFound += matches.length
+        if (matchesFound >= minMatches) {
+          break
+        }
+        if (!activityHasMore) break
+      }
+      setActivityPage(lastPageFetched)
+      setActivityFilterLoading(false)
+    })()
+
+    return () => { cancelled = true }
+  }, [activityFilter, authToken, currentUserId])
 
   useEffect(() => {
     if (selectedGroupId) {
@@ -1496,6 +1537,61 @@ async function handleSettleUp(expenseId: string) {
     resetPasswordForm()
   }
 
+  function openEditProfileModal() {
+    setEditProfileName(currentUser?.name || '')
+    setEditProfileError('')
+    setEditProfileSuccess('')
+    setEditProfileLoading(false)
+    setShowEditProfileModal(true)
+  }
+
+  function closeEditProfileModal() {
+    setShowEditProfileModal(false)
+    setEditProfileError('')
+    setEditProfileSuccess('')
+    setEditProfileLoading(false)
+  }
+
+  async function handleEditProfileSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setEditProfileError('')
+    setEditProfileSuccess('')
+
+    const nextName = editProfileName.trim()
+    if (!nextName) {
+      setEditProfileError('Name cannot be empty.')
+      return
+    }
+    if (!currentUserId) {
+      setEditProfileError('Please log in again before updating your profile.')
+      return
+    }
+
+    setEditProfileLoading(true)
+    try {
+      const res = await authedFetch(`${API_BASE}/users/${currentUserId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ name: nextName }),
+      })
+
+      if (!res.ok) {
+        const message = await res.text()
+        setEditProfileError(message || 'Unable to update profile.')
+        return
+      }
+
+      const updatedUser = await res.json()
+      setUsers((prev) => prev.map((user) => (user.id === updatedUser.id ? updatedUser : user)))
+      await fetchUsers()
+      setEditProfileSuccess('Profile updated successfully.')
+      setShowEditProfileModal(false)
+    } catch {
+      setEditProfileError('Unable to reach the profile update service.')
+    } finally {
+      setEditProfileLoading(false)
+    }
+  }
+
   async function handleChangePassword(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setPasswordChangeError('')
@@ -1541,6 +1637,8 @@ async function handleSettleUp(expenseId: string) {
       setPasswordChangeLoading(false)
     }
   }
+
+  
 
   function inferExpenseCategory(description: string): string {
     const text = description.toLowerCase()
@@ -1742,7 +1840,6 @@ async function handleSettleUp(expenseId: string) {
             <button type="button" className="workspace-primary-btn" onClick={onAddExpense}>+ Add Expense</button>
           </div>
         </div>
-
         <div className="workspace-stat-grid">
           <article className="workspace-stat-card">
             <div className="workspace-stat-icon workspace-stat-icon-purple">□</div>
@@ -3860,7 +3957,7 @@ async function handleSettleUp(expenseId: string) {
                           expenseDetailView.flaggedBy?.includes(currentUserId) ? (
                             <button type="button" onClick={() => handleUnflagExpense(expenseDetailView.id)}>Unflag expense</button>
                           ) : (
-                            <button type="button" onClick={() => handleFlagExpense(expenseDetailView.id)}>Flag expense</button>
+                            <button type="button" className="flag-btn" onClick={() => handleFlagExpense(expenseDetailView.id)}>Flag expense</button>
                           )
                         )}
                         {expenseDetailView.groupId && expenseDetailView.payerId !== currentUserId && (expenseDetailView.participantIds || []).includes(currentUserId) && !expenseDetailView.settledByUser?.[currentUserId] && (
@@ -3998,10 +4095,14 @@ async function handleSettleUp(expenseId: string) {
                       <button
                         key={tab.key}
                         type="button"
+                        disabled={activityFilterLoading}
                         className={activityFilter === tab.key ? 'activity-filter-chip activity-filter-chip-active' : 'activity-filter-chip'}
                         onClick={() => setActivityFilter(tab.key)}
                       >
                         {tab.label} {tab.count}
+                        {activityFilterLoading && activityFilter === tab.key && (
+                          <span className="activity-filter-loading"> …</span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -4151,7 +4252,7 @@ async function handleSettleUp(expenseId: string) {
                         <h3>{currentUser?.name || 'Rahul Sharma'}</h3>
                         <p>{currentUser?.email || 'rahul@gmail.com'} · Member since {memberSince}</p>
                         <div className="account-inline-actions">
-                          <button type="button" className="icon-btn">Edit profile</button>
+                          <button type="button" className="icon-btn" onClick={openEditProfileModal}>Edit profile</button>
                           <button type="button" className="ghost-btn" onClick={openPasswordModal}>Change password</button>
                         </div>
                       </div>
@@ -4452,6 +4553,52 @@ async function handleSettleUp(expenseId: string) {
                   {passwordChangeLoading ? 'Updating...' : 'Update password'}
                 </button>
                 <button type="button" className="ghost-btn" onClick={closePasswordModal}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showEditProfileModal && (
+        <div className="modal-overlay" onClick={closeEditProfileModal}>
+          <div className="modal profile-edit-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h2>Edit profile</h2>
+                <p className="profile-edit-subtitle">Update the name shown across your account.</p>
+              </div>
+              <button className="modal-close" onClick={closeEditProfileModal}>✕</button>
+            </div>
+
+            <form className="form-vertical" onSubmit={handleEditProfileSubmit}>
+              <label className="field-label">Display name</label>
+              <input
+                type="text"
+                value={editProfileName}
+                onChange={(event) => setEditProfileName(event.target.value)}
+                autoComplete="name"
+                placeholder="Enter your display name"
+                required
+              />
+
+              <div className="profile-edit-preview">
+                <div className="profile-edit-avatar">{getInitials(editProfileName || currentUser?.name || 'You')}</div>
+                <div>
+                  <div className="profile-edit-preview-label">Preview</div>
+                  <div className="profile-edit-preview-name">{editProfileName.trim() || currentUser?.name || 'You'}</div>
+                </div>
+              </div>
+
+              {editProfileError && <p className="error-text">{editProfileError}</p>}
+              {editProfileSuccess && <p className="success-text">{editProfileSuccess}</p>}
+
+              <div className="account-inline-actions profile-edit-actions">
+                <button type="submit" disabled={editProfileLoading}>
+                  {editProfileLoading ? 'Saving...' : 'Save changes'}
+                </button>
+                <button type="button" className="ghost-btn" onClick={closeEditProfileModal}>
                   Cancel
                 </button>
               </div>

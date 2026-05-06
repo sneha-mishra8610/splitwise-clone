@@ -44,10 +44,8 @@ public class UserService {
         User existing = userRepository.findById(user.getId())
                 .orElseThrow(() -> new NoSuchElementException("User not found: " + user.getId()));
 
-        // Never allow generic profile updates to wipe credentials.
         user.setPasswordHash(existing.getPasswordHash());
 
-        // Preserve critical fields when omitted in partial update payloads.
         if (user.getEmail() == null || user.getEmail().isBlank()) {
             user.setEmail(existing.getEmail());
         }
