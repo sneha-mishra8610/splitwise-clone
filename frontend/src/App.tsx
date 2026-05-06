@@ -4294,18 +4294,7 @@ async function handleSettleUp(expenseId: string) {
                       </div>
 
                       <form className="account-budget-form" onSubmit={handleSaveBudget}>
-                        <label className="field-label">Budget period</label>
-                        <select
-                          value={selectedBudgetPeriod}
-                          onChange={(event) => setSelectedBudgetPeriod(event.target.value as BudgetPeriod)}
-                        >
-                          <option value="DAILY">Daily</option>
-                          <option value="WEEKLY">Weekly</option>
-                          <option value="MONTHLY">Monthly</option>
-                          <option value="QUARTERLY">Quarterly</option>
-                          <option value="YEARLY">Yearly</option>
-                        </select>
-                        <label className="field-label">Budget amount</label>
+                        <label className="field-label">Budget</label>
                         <div className="account-budget-entry">
                           <input
                             type="number"
@@ -4314,19 +4303,28 @@ async function handleSettleUp(expenseId: string) {
                             placeholder={selectedBudgetMeta.placeholder}
                             value={budgetInput}
                             onChange={(event) => setBudgetInput(event.target.value)}
+                            aria-label="Budget amount"
                           />
-                          <button type="submit">Save</button>
-                        </div>
-                        
-                        <div className="account-budget-currency-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                          <span>Summary currency:</span>
-                          <select value={budgetSummaryCurrency} onChange={e => setBudgetSummaryCurrency(e.target.value)}>
+                          <select
+                            className="period-select"
+                            value={selectedBudgetPeriod}
+                            onChange={(event) => setSelectedBudgetPeriod(event.target.value as BudgetPeriod)}
+                            aria-label="Budget period"
+                          >
+                            <option value="DAILY">Daily</option>
+                            <option value="WEEKLY">Weekly</option>
+                            <option value="MONTHLY">Monthly</option>
+                            <option value="QUARTERLY">Quarterly</option>
+                            <option value="YEARLY">Yearly</option>
+                          </select>
+                          <select className="currency-select" value={budgetSummaryCurrency} onChange={e => setBudgetSummaryCurrency(e.target.value)} aria-label="Summary currency">
                             <option value="INR">INR ₹</option>
                             <option value="USD">USD $</option>
                             <option value="EUR">EUR €</option>
                             <option value="GBP">GBP £</option>
                             <option value="JPY">JPY ¥</option>
                           </select>
+                          <button type="submit">Save</button>
                         </div>
                       </form>
 
