@@ -566,23 +566,37 @@ useEffect(() => {
   localStorage.setItem('defaultCurrency', defaultCurrency);
 }, [defaultCurrency]);
   const [exchangeRates, setExchangeRates] = useState<{ [key: string]: number }>({ INR: 1 });
-    useEffect(() => {
-      if (defaultCurrency !== 'INR') {
-        fetch('https://api.exchangerate-api.com/v4/latest/INR')
-          .then(res => res.json())
-          .then(data => setExchangeRates(data.rates))
-          .catch(() => setExchangeRates({ INR: 1 }));
-      } else {
-        setExchangeRates({ INR: 1 });
-      }
-    }, [defaultCurrency]);
+  const [budgetSummaryCurrency, setBudgetSummaryCurrency] = useState<string>(defaultCurrency);
+  useEffect(() => {
+    // Ensure we have INR-based exchange rates when either the user's preference
+    // currency or the budget summary currency is not INR. This keeps budget
+    // conversions independent from the overall preference currency.
+    const needsRates = defaultCurrency !== 'INR' || budgetSummaryCurrency !== 'INR'
+    if (!needsRates) {
+      setExchangeRates({ INR: 1 })
+      return
+    }
+
+    let mounted = true
+    fetch('https://api.exchangerate-api.com/v4/latest/INR')
+      .then(res => res.json())
+      .then(data => {
+        if (!mounted) return
+        if (data && data.rates) setExchangeRates(data.rates)
+      })
+      .catch(() => {
+        if (!mounted) return
+        setExchangeRates({ INR: 1 })
+      })
+
+    return () => { mounted = false }
+  }, [defaultCurrency, budgetSummaryCurrency]);
 
     function convertINR(amount: number, toCurrency: string): number {
       const rate = exchangeRates[toCurrency] || 1;
       return amount * rate;
     }
   
-  const [budgetSummaryCurrency, setBudgetSummaryCurrency] = useState<string>(defaultCurrency);
   const [settlementRemindersEnabled, setSettlementRemindersEnabled] = useState(true)
   const [reminderDelayDays, setReminderDelayDays] = useState<'3' | '5' | '7'>('5')
   const [defaultSplitMethod, setDefaultSplitMethod] = useState<'equal' | 'unequal' | 'percentage'>('equal')
@@ -643,6 +657,20 @@ useEffect(() => {
     setBudgetAmount(Number.isFinite(parsedBudget) ? parsedBudget : 0)
     setBudgetInput(Number.isFinite(parsedBudget) && parsedBudget > 0 ? String(parsedBudget) : '')
   }, [budgetStorageKey, currentUser, budgetSummaries, selectedBudgetPeriod, budgetPeriodMeta.storageToken])
+
+  // When the summary currency changes, show the converted amount in the input
+  useEffect(() => {
+    if (!budgetAmount || budgetAmount <= 0) {
+      setBudgetInput('')
+      return
+    }
+    try {
+      const converted = convertINR(budgetAmount, budgetSummaryCurrency)
+      setBudgetInput(Number.isFinite(converted) ? String(converted.toFixed(2)) : '')
+    } catch (e) {
+      setBudgetInput(budgetAmount ? String(budgetAmount) : '')
+    }
+  }, [budgetSummaryCurrency, budgetAmount, exchangeRates])
 
   useEffect(() => {
     if (!currentUser) return
@@ -734,10 +762,14 @@ useEffect(() => {
     const parsed = Number(budgetInput)
     const sanitized = Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) / 100 : 0
     if (!currentUser) return
+    // `sanitized` is the amount shown to the user in `budgetSummaryCurrency`.
+    // Convert back to INR (backend canonical currency) before saving.
+    const rate = exchangeRates[budgetSummaryCurrency] || 1
+    const amountInINR = rate > 0 ? Math.round((sanitized / rate) * 100) / 100 : sanitized
     const body = {
       period: selectedBudgetPeriod,
       storageToken: budgetPeriodMeta.storageToken,
-      amount: sanitized,
+      amount: amountInINR,
     }
     const res = await authedFetch(`${API_BASE}/users/${currentUser.id}/budgets`, {
       method: 'POST',
@@ -748,7 +780,9 @@ useEffect(() => {
         const updatedUser: User = await res.json()
         setUsers((prev) => prev.map((user) => (user.id === updatedUser.id ? updatedUser : user)))
       } catch (e) { }
-      setBudgetAmount(sanitized)
+      // Store canonical INR amount locally, but keep the input showing the value in the
+      // currently selected summary currency (sanitized)
+      setBudgetAmount(amountInINR)
       setBudgetInput(sanitized > 0 ? String(sanitized) : '')
       void fetchUserBudgets(currentUser.id)
     }
