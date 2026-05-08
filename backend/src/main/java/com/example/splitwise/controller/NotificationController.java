@@ -2,7 +2,8 @@ package com.example.splitwise.controller;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import com.example.splitwise.service.NotificationService;
-import com.example.splitwise.model.Expense;
+import com.example.splitwise.model.Notification;
+import com.example.splitwise.service.NotificationService;
 import java.util.*;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,7 +18,7 @@ public class NotificationController {
     }
 
     @GetMapping("/{userId}")
-    public List<Expense> getNotifications(@PathVariable("userId") String userId){
-        return notificationService.getPendingExpenses(userId);
+    public List<Notification> getNotifications(@PathVariable("userId") String userId){
+        return notificationService.getScheduledNotifications(userId);
     }
 }

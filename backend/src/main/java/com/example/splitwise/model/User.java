@@ -3,6 +3,9 @@ package com.example.splitwise.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.format.annotation.DateTimeFormat;
+
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -16,7 +19,7 @@ public class User {
     private String id;
     private String name;
     private String email;
-
+    
     @JsonIgnore
     private String passwordHash;
 
@@ -25,6 +28,46 @@ public class User {
     private Map<String, Double> budgetPreferences = new HashMap<>();
 
     private boolean emailNotificationsEnabled = true;
+
+    private Map<String,Instant> lastNotificationSent;
+
+    private Boolean settlementReminderEnabled = true;
+    private Integer remainderDelays = 5;
+
+    public Map<String, Instant> getLastNotificationSent() {
+        return lastNotificationSent;
+    }
+
+    public void setLastNotificationSent(Map<String, Instant> lastNotificationSent) {
+        this.lastNotificationSent = lastNotificationSent;
+    }
+
+    public boolean getSettlementReminderEnabled() {
+        return settlementReminderEnabled == null ? true : settlementReminderEnabled;
+    }
+
+    public Boolean getSettlementReminderEnabledRaw() {
+        return settlementReminderEnabled;
+    }
+
+    public void setSettlementReminderEnabled(boolean settlementReminderEnabled) {
+        this.settlementReminderEnabled = settlementReminderEnabled;
+    }
+
+    public int getRemainderDelays() {
+        if (remainderDelays == null || remainderDelays <= 0) {
+            return 5;
+        }
+        return remainderDelays;
+    }
+
+    public Integer getRemainderDelaysRaw() {
+        return remainderDelays;
+    }
+
+    public void setRemainderDelays(int remainderDelays) {
+        this.remainderDelays = remainderDelays;
+    }
 
     public String getId() {
         return id;

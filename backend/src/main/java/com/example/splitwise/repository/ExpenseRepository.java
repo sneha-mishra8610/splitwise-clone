@@ -29,5 +29,11 @@ public interface ExpenseRepository extends MongoRepository<Expense, String> {
 
     @Query("{ 'payerId': ?0, 'createdAt': { $gte: ?1, $lt: ?2 } }")
     List<Expense> findByPayerIdAndCreatedAtBetween(String payerId, Instant start, Instant end);
+
+    @Query("{ 'payerId': ?0, 'expenseStatus': 'Unsettled' }")
+    List<Expense> findByPayerIdWhereExpenseUnsettled(String userId);
+
+    @Query("{ 'participantIds': ?0, 'expenseStatus': 'Unsettled', 'payerId': { '$ne': ?0 }, 'settledByUser.?0': { '$ne': true } }")
+    List<Expense> findByParticipantIdWhereParticipantUnsettled(String userId);
 }
 

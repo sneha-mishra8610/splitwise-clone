@@ -10,6 +10,8 @@ type User = {
   friendIds: string[]
   budgetPreferences?: Record<string, number>
   emailNotificationsEnabled: boolean
+  settlementReminderEnabled?: boolean
+  remainderDelays?: number
 }
 
 type Group = {
@@ -68,6 +70,17 @@ type PendingInvitation = {
   groupId?: string
   groupName?: string
   createdAt: string
+}
+
+type AppNotification = {
+  id: string
+  userId: string
+  expenseId: string
+  type: 'OWE' | 'OWED'
+  message: string
+  read?: boolean
+  lastSent?: string
+  createdAt?: string
 }
 
 type AuthResponse = {
@@ -288,7 +301,7 @@ function App() {
   const [editProfileSuccess, setEditProfileSuccess] = useState('');
   const [editProfileLoading, setEditProfileLoading] = useState(false);
   
-  const [pendingExpenses, setPendingExpenses] = useState<Expense[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [notificationError, setNotificationError] = useState('');
   const [expensesPage, setExpensesPage] = useState(1);
@@ -1120,6 +1133,52 @@ const handleUnflagExpense = React.useCallback(async (expenseId: string) => {
       await fetchUsers()
     }
   }
+
+  async function handleToggleSettlementReminders(user: User) {
+    const nextEnabled = !settlementRemindersEnabled
+    setSettlementRemindersEnabled(nextEnabled)
+    const res = await authedFetch(`${API_BASE}/users/${user.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...user,
+        settlementReminderEnabled: nextEnabled,
+        remainderDelays: Number(reminderDelayDays),
+      }),
+    })
+    if (res.ok) {
+      await fetchUsers()
+    } else {
+      setSettlementRemindersEnabled(!nextEnabled)
+    }
+  }
+
+  async function handleReminderDelayChange(user: User, value: '3' | '5' | '7') {
+    setReminderDelayDays(value)
+    const res = await authedFetch(`${API_BASE}/users/${user.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...user,
+        settlementReminderEnabled: settlementRemindersEnabled,
+        remainderDelays: Number(value),
+      }),
+    })
+    if (res.ok) {
+      await fetchUsers()
+    }
+  }
+
+  useEffect(() => {
+    if (!currentUser) return
+    setSettlementRemindersEnabled(currentUser.settlementReminderEnabled ?? true)
+    const delay = currentUser.remainderDelays
+    if (delay === 3 || delay === 5 || delay === 7) {
+      setReminderDelayDays(String(delay) as '3' | '5' | '7')
+    } else {
+      setReminderDelayDays('5')
+    }
+  }, [currentUser])
 
   async function handleAcceptFriendInvitation(invitationId: string) {
     try {
@@ -2678,15 +2737,15 @@ async function handleSettleUp(expenseId: string) {
     try {
       const res = await authedFetch(`${API_BASE}/notifications/${currentUserId}`);
       if (res.ok) {
-        const expenses = await res.json();
-        setPendingExpenses(Array.isArray(expenses) ? expenses : []);
+        const data = await res.json();
+        setNotifications(Array.isArray(data) ? data : []);
       } else {
         setNotificationError('Failed to fetch notifications.');
-        setPendingExpenses([]);
+        setNotifications([]);
       }
     } catch {
       setNotificationError('Could not reach server.');
-      setPendingExpenses([]);
+      setNotifications([]);
     } finally {
       setLoadingNotifications(false);
       setShowNotifications(true);
@@ -2746,15 +2805,20 @@ async function handleSettleUp(expenseId: string) {
               <div>Loading...</div>
             ) : notificationError ? (
               <div className="error-text">{notificationError}</div>
-            ) : pendingExpenses.length === 0 ? (
-              <div>No unsettled expenses!</div>
+            ) : notifications.length === 0 ? (
+              <div>No notifications available.</div>
             ) : (
               <ul className="card-list" style={{ maxHeight: 300, overflowY: 'auto' }}>
-                {pendingExpenses.map(e => (
-                  <li key={e.id} className="card" style={{ marginBottom: 12 }}>
-                    <strong>{e.description}</strong><br />
-                    Amount: ₹{e.amount} <br />
-                    Type: {e.type}
+                {notifications.map((notification) => (
+                  <li key={notification.id} className="card" style={{ marginBottom: 12 }}>
+                    <strong>{notification.type === 'OWED' ? 'You are owed' : 'You owe'}</strong><br />
+                    {notification.message}
+                    <br />
+                    <span className="muted">
+                      {notification.createdAt
+                        ? new Date(notification.createdAt).toLocaleString()
+                        : 'Recently'}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -4454,7 +4518,7 @@ async function handleSettleUp(expenseId: string) {
                             <button
                               type="button"
                               className={settlementRemindersEnabled ? 'toggle-btn toggle-btn-on' : 'toggle-btn'}
-                              onClick={() => setSettlementRemindersEnabled((value) => !value)}
+                              onClick={() => currentUser && handleToggleSettlementReminders(currentUser)}
                             >
                               {settlementRemindersEnabled ? 'On' : 'Off'}
                             </button>
@@ -4464,7 +4528,7 @@ async function handleSettleUp(expenseId: string) {
                             <span className="account-form-label">Reminder delay</span>
                             <select
                               value={reminderDelayDays}
-                              onChange={(event) => setReminderDelayDays(event.target.value as '3' | '5' | '7')}
+                              onChange={(event) => currentUser && handleReminderDelayChange(currentUser, event.target.value as '3' | '5' | '7')}
                               disabled={!settlementRemindersEnabled}
                             >
                               <option value="3">3 days</option>

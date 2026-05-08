@@ -397,7 +397,7 @@ public void settleExpense(String expenseId, String settlingUserId) {
         }
     }
 
-    private BigDecimal getOwedAmount(Expense expense, String userId) {
+    public BigDecimal getOwedAmount(Expense expense, String userId) {
         if (expense.getCustomSplits() != null && expense.getCustomSplits().containsKey(userId)) {
             return expense.getCustomSplits().get(userId);
         }
