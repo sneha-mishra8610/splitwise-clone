@@ -128,5 +128,14 @@ public class ExpenseController {
                                        expenseService.settleAllWithFriend(userId, friendId);
                                        return ResponseEntity.ok().build();
                                     }
+
+        @PostMapping("/remind-with-friend")
+        public ResponseEntity<Map<String, Integer>> remindWithFriend(
+                                    @RequestParam String userId,
+                                    @RequestParam String friendId
+                                    ) {
+                                      int sent = expenseService.sendReminderToFriend(userId, friendId);
+                                      return ResponseEntity.ok(Map.of("sent", sent));
+                                    }
 }
 

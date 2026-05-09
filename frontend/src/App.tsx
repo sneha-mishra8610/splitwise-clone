@@ -1602,6 +1602,14 @@ async function handleSettleUp(expenseId: string) {
   await fetchFriendBalances();
 }
 
+async function handleRemindFriend(friendId: string) {
+  if (!currentUserId) return
+  try {
+    await authedFetch(`${API_BASE}/expenses/remind-with-friend?userId=${currentUserId}&friendId=${friendId}`, { method: 'POST' })
+  } catch { /* ignore */ }
+  await fetchActivities(currentUserId)
+}
+
   function getInitials(name: string): string {
     return name
       .split(' ')
@@ -2727,30 +2735,53 @@ async function handleSettleUp(expenseId: string) {
   })
 
   async function handleShowNotifications() {
+    setShowNotifications(true)
     if (!currentUserId) {
-      setNotificationError('No user selected.');
-      setShowNotifications(true);
-      return;
+      setNotificationError('No user selected.')
+      return
     }
-    setLoadingNotifications(true);
-    setNotificationError('');
+    void fetchNotifications(true)
+  }
+
+  const fetchNotifications = useCallback(async (showSpinner = false) => {
+    if (!currentUserId) return
+    if (showSpinner) setLoadingNotifications(true)
     try {
-      const res = await authedFetch(`${API_BASE}/notifications/${currentUserId}`);
+      const res = await authedFetch(`${API_BASE}/notifications/${currentUserId}?preferredCurrency=${encodeURIComponent(defaultCurrency)}`)
       if (res.ok) {
-        const data = await res.json();
-        setNotifications(Array.isArray(data) ? data : []);
+        const data = await res.json()
+        setNotifications(Array.isArray(data) ? data : [])
+        setNotificationError('')
       } else {
-        setNotificationError('Failed to fetch notifications.');
-        setNotifications([]);
+        let details = ''
+        try {
+          details = await res.text()
+        } catch { /* ignore */ }
+        if (showSpinner) {
+          if (res.status === 401) {
+            setNotificationError('Session expired (401). Please log in again.')
+          } else {
+            setNotificationError(`Failed to fetch notifications (${res.status})${details ? `: ${details}` : ''}.`)
+          }
+        }
       }
     } catch {
-      setNotificationError('Could not reach server.');
-      setNotifications([]);
+      if (showSpinner) {
+        setNotificationError('Could not reach server.')
+      }
     } finally {
-      setLoadingNotifications(false);
-      setShowNotifications(true);
+      if (showSpinner) setLoadingNotifications(false)
     }
-  }
+  }, [authedFetch, currentUserId, defaultCurrency])
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setNotifications([])
+      setNotificationError('')
+      return
+    }
+    void fetchNotifications(false)
+  }, [currentUserId, defaultCurrency, fetchNotifications])
 
   return (
     <div className={`app ${theme === 'light' ? 'light-mode' : ''}`}>
@@ -3269,7 +3300,15 @@ async function handleSettleUp(expenseId: string) {
                                 Settle
                               </button>
                             ) : friendBalances[f.id] > 0 ? (
-                              <button className="decline-btn friends-remind-btn" onClick={(event) => event.stopPropagation()}>Remind</button>
+                              <button
+                                className="decline-btn friends-remind-btn"
+                                onClick={async (event) => {
+                                  event.stopPropagation()
+                                  await handleRemindFriend(f.id)
+                                }}
+                              >
+                                Remind
+                              </button>
                             ) : null}
                             <button className="icon-btn" title="Edit" onClick={(event) => { event.stopPropagation(); startEditFriend(f) }}>Edit</button>
                             <button className="icon-btn danger" title="Remove" onClick={(event) => { event.stopPropagation(); handleRemoveFriend(f.id) }}>Remove</button>
@@ -3455,7 +3494,7 @@ async function handleSettleUp(expenseId: string) {
           Settle
           </button>
           ) : friendBalances[f.id] > 0 ? (
-          <button className="icon-btn" style={{ color: 'green' }}>Remind</button>
+          <button className="icon-btn" style={{ color: 'green' }} onClick={() => handleRemindFriend(f.id)}>Remind</button>
           ) : null}
           {/* Edit and delete icons/buttons */}
           <button className="icon-btn" title="Edit" onClick={() => startEditFriend(f)}>✏️</button>

@@ -22,17 +22,12 @@ public class User {
     
     @JsonIgnore
     private String passwordHash;
-
     private Set<String> friendIds = new HashSet<>();
-
     private Map<String, Double> budgetPreferences = new HashMap<>();
-
-    private boolean emailNotificationsEnabled = true;
-
+    private boolean emailNotificationsEnabled=true;
     private Map<String,Instant> lastNotificationSent;
-
-    private Boolean settlementReminderEnabled = true;
-    private Integer remainderDelays = 5;
+    private Boolean settlementReminderEnabled=true;
+    private Integer remainderDelays=3;
 
     public Map<String, Instant> getLastNotificationSent() {
         return lastNotificationSent;
@@ -46,22 +41,13 @@ public class User {
         return settlementReminderEnabled == null ? true : settlementReminderEnabled;
     }
 
-    public Boolean getSettlementReminderEnabledRaw() {
-        return settlementReminderEnabled;
-    }
-
     public void setSettlementReminderEnabled(boolean settlementReminderEnabled) {
         this.settlementReminderEnabled = settlementReminderEnabled;
     }
 
     public int getRemainderDelays() {
-        if (remainderDelays == null || remainderDelays <= 0) {
-            return 5;
-        }
-        return remainderDelays;
-    }
-
-    public Integer getRemainderDelaysRaw() {
+        if (remainderDelays == null || remainderDelays <= 0)
+            remainderDelays=3;
         return remainderDelays;
     }
 

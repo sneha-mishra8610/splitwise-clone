@@ -2,8 +2,10 @@ package com.example.splitwise.service;
 
 import com.example.splitwise.model.Activity;
 import com.example.splitwise.model.Expense;
+import com.example.splitwise.model.Notification;
 import com.example.splitwise.repository.ActivityRepository;
 import com.example.splitwise.repository.ExpenseRepository;
+import com.example.splitwise.repository.NotificationRepository;
 import com.example.splitwise.repository.UserRepository;
 import com.example.splitwise.service.ExpenseEditLogService;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -27,13 +29,16 @@ public class ExpenseService {
     private final ActivityRepository activityRepository;
     private final UserRepository userRepository;
     private final ExpenseEditLogService expenseEditLogService;
+    private final NotificationRepository notificationRepository;
 
     public ExpenseService(ExpenseRepository expenseRepository, ActivityRepository activityRepository,
-                          UserRepository userRepository,ExpenseEditLogService expenseEditLogService) {
+                          UserRepository userRepository,ExpenseEditLogService expenseEditLogService,
+                          NotificationRepository notificationRepository) {
         this.expenseRepository = expenseRepository;
         this.activityRepository = activityRepository;
         this.userRepository = userRepository;
         this.expenseEditLogService=expenseEditLogService;
+        this.notificationRepository = notificationRepository;
     }
 
     public Expense createExpense(Expense expense) {
@@ -474,5 +479,41 @@ public void settleExpense(String expenseId, String settlingUserId) {
         expense.setExpenseStatus(allSettled ? Expense.ExpenseStatus.Settled : Expense.ExpenseStatus.Unsettled);
         expenseRepository.save(expense);
     }
+    }
+
+    public int sendReminderToFriend(String userId, String friendId) {
+        List<Expense> expenses = expenseRepository.findByBothParticipants(userId, friendId);
+        String payerName = userRepository.findById(userId).map(u -> u.getName()).orElse("Someone");
+        Instant now = Instant.now();
+        int sentCount = 0;
+
+        for (Expense expense : expenses) {
+            if (!userId.equals(expense.getPayerId())) {
+                continue;
+            }
+            if (!expense.getParticipantIds().contains(friendId)) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(expense.getSettledByUser() != null ? expense.getSettledByUser().get(friendId) : null)) {
+                continue;
+            }
+
+            BigDecimal owedAmount = getOwedAmount(expense, friendId);
+            String message = "Reminder: You owe \u20b9" + owedAmount + " to " + payerName + " for \"" + expense.getDescription() + "\".";
+
+            Activity activity = new Activity();
+            activity.setUserId(friendId);
+            activity.setType(Activity.ActivityType.EXPENSE_OWED);
+            activity.setRelatedExpenseId(expense.getId());
+            activity.setRelatedGroupId(expense.getGroupId());
+            activity.setDescription(message);
+            activityRepository.save(activity);
+
+            Notification notification = new Notification(friendId, expense.getId(), Notification.Type.OWE, message, now);
+            notificationRepository.save(notification);
+            sentCount++;
+        }
+
+        return sentCount;
     }
 }
